@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>DASHBOARD UJUNG WETAN · HP v3</title>
+  <title>DASHBOARD UJUNG WETAN · HP v4</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- Default data URL (GitHub Pages). Opsional: config.js di root bisa menimpa ini. -->
@@ -1666,27 +1666,13 @@
           </div>
         </div>
         <p style="margin-top:10px;font-size:.72rem;color:#64748b;font-weight:700;line-height:1.4">
-          Update data: ${esc(DATA.generated || '-')} · Mode HP ringan (v3)
+          Update data: ${esc(DATA.generated || '-')} · Mode HP ringan (v4)
         </p>
       `) + card('SHARE 4 BRAND', brandCards),
 
       brands: card('TABEL BRAND', brandCards),
 
       depo: card('TOP DEPO SAMSUNG', depoRows),
-
-      sales: card('SALES', `
-        <p style="font-weight:700;font-size:.82rem;line-height:1.45;color:#334155">
-          Menu Sales lengkap (daftar outlet, QVO, chart) lebih berat di HP.
-          Gunakan <strong>laptop/PC</strong> untuk detail penuh, atau buka lewat Wi‑Fi + Chrome.
-        </p>
-      `),
-
-      kalkulator: card('KALKULATOR', `
-        <p style="font-weight:700;font-size:.82rem;line-height:1.45;color:#334155">
-          Kalkulator margin tersedia penuh di tampilan desktop.
-          Buka dashboard di laptop untuk hitung cashback / trade-in / rebate.
-        </p>
-      `),
 
       'review-dealer': card('REVIEW DEALER', `
         <p style="font-weight:700;font-size:.82rem;line-height:1.45;color:#334155">
@@ -1702,23 +1688,252 @@
       `),
     };
 
-    const paint = (key) => {
-      page = key;
+    // —— Sales HP (daftar sales + detail dealer) ——
+    let mSalesPack = null;
+    let mSalesFocus = '';
+    let mSalesQ = '';
+    let mDealerQ = '';
+    const getMSales = () => {
+      if (!mSalesPack) {
+        try { mSalesPack = buildSalesLiveList(); }
+        catch (e) { console.warn(e); mSalesPack = { list: [], brandCols: BRANDS, filterHint: '' }; }
+      }
+      return mSalesPack;
+    };
+
+    const selStyle = 'width:100%;border:1px solid #c5d4e8;border-radius:10px;padding:10px;font-size:.85rem;font-weight:700;background:#fff;margin-top:4px';
+    const labelStyle = 'font-size:.68rem;font-weight:900;color:#64748b;display:block;margin-top:8px';
+
+    const paintSalesMobile = () => {
       const app = document.getElementById('app');
       if (!app) return;
-      app.innerHTML = `
-        <div style="background:#ecfdf5;border:2px solid #6ee7b7;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-weight:900;color:#065f46;font-size:.78rem">
-          MODE HP v3 · Konten aktif · Geser menu bawah
+      const { list, brandCols, filterHint } = getMSales();
+      if (!list.length) {
+        app.innerHTML = banner() + card('SALES', '<p style="font-weight:700;color:#64748b">Data sales_sheet belum ada. Jalankan update-data.bat di PC, upload data.json.gz baru.</p>') + foot();
+        return;
+      }
+
+      // Detail 1 sales
+      if (mSalesFocus) {
+        const s = list.find(x => x.sales === mSalesFocus);
+        if (!s) { mSalesFocus = ''; paintSalesMobile(); return; }
+        const qq = mDealerQ.trim().toLowerCase();
+        let dealers = [...(s.dealers || [])];
+        if (qq) {
+          dealers = dealers.filter(d => String(d.dealer || '').toLowerCase().includes(qq));
+        }
+        dealers.sort((a, b) => {
+          const aq = isSalesQvo(a.SAMSUNG) ? 1 : 0;
+          const bq = isSalesQvo(b.SAMSUNG) ? 1 : 0;
+          if (aq !== bq) return aq - bq;
+          const ta = brandCols.reduce((x, br) => x + (Number(a[br]) || 0), 0);
+          const tb = brandCols.reduce((x, br) => x + (Number(b[br]) || 0), 0);
+          return tb - ta;
+        });
+        const show = dealers.slice(0, 80);
+        const brandChips = brandCols.map(b => {
+          const v = Number(s.totals?.[b]) || 0;
+          const bo = Number(s.bo?.[b]) || 0;
+          const qvo = Number(s.qvo?.[b]) || 0;
+          return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:8px;min-width:0">
+            <div style="font-size:.62rem;font-weight:900;color:${COLORS[b] || '#334155'}">${b}</div>
+            <div style="font-size:.78rem;font-weight:900;margin-top:2px">${fmtIDR(v)}</div>
+            <div style="font-size:.62rem;color:#64748b;font-weight:700">BO ${fmtN(bo)} · QVO ${fmtN(qvo)}</div>
+          </div>`;
+        }).join('');
+
+        const dealerCards = show.map((d, i) => {
+          const tot = brandCols.reduce((a, b) => a + (Number(d[b]) || 0), 0);
+          const belum = !isSalesQvo(d.SAMSUNG);
+          return `<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px;margin-bottom:8px;${belum ? 'background:#fef2f2' : 'background:#fff'}">
+            <div style="font-weight:900;font-size:.8rem;line-height:1.3">${i + 1}. ${esc(d.dealer || '-')}${belum ? ' <span style="color:#b91c1c;font-size:.65rem">BELUM QVO</span>' : ''}</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;font-size:.68rem;font-weight:800">
+              <span style="color:#1d4ed8">SAM ${fmtIDR(d.SAMSUNG)}</span>
+              <span style="color:#ea580c">XIM ${fmtIDR(d.XIAOMI)}</span>
+              <span style="color:#0891b2">TNO ${fmtIDR(d.TECNO)}</span>
+              <span style="color:#52525b">APP ${fmtIDR(d.APPLE)}</span>
+            </div>
+            <div style="margin-top:6px;font-weight:900;font-size:.78rem">Total ${fmtIDR(tot)}</div>
+          </div>`;
+        }).join('') || '<div style="color:#64748b;font-weight:700">Tidak ada dealer</div>';
+
+        app.innerHTML = banner() + card('SALES · ' + esc(s.sales), `
+          <button type="button" id="mSalesBack" style="border:1px solid #9fd4f0;background:#e6f6fc;color:#0B2F6B;border-radius:10px;padding:8px 12px;font-weight:900;font-size:.75rem;margin-bottom:10px">← Kembali ke daftar sales</button>
+          <div style="font-size:.72rem;color:#64748b;font-weight:700;margin-bottom:8px">${fmtN(dealers.length)} dealer · Total ${fmtIDR(s.totalAmt)} · With Tax · QVO Sam min ${fmtIDR(QVO_THRESHOLD_SALES)}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">${brandChips}</div>
+          <div style="background:#fff7ed;border-radius:10px;padding:8px;font-size:.72rem;font-weight:800;color:#c2410c;margin-bottom:10px">
+            Belum QVO Samsung: ${fmtN(s.belumQvoSam)} · Sudah: ${fmtN(s.sudahQvoSam)}
+          </div>
+          <label style="${labelStyle}">Cari dealer</label>
+          <input id="mDealerSearch" type="search" value="${esc(mDealerQ)}" placeholder="Ketik nama dealer…" style="${selStyle}" />
+          <div style="margin-top:10px">${dealerCards}</div>
+          ${dealers.length > 80 ? `<p style="font-size:.7rem;color:#94a3b8;font-weight:700">Menampilkan 80 dari ${fmtN(dealers.length)} dealer. Ketik cari untuk filter.</p>` : ''}
+        `) + foot();
+
+        document.getElementById('mSalesBack').onclick = () => { mSalesFocus = ''; mDealerQ = ''; paintSalesMobile(); };
+        const ds = document.getElementById('mDealerSearch');
+        if (ds) {
+          ds.oninput = () => {
+            mDealerQ = ds.value || '';
+            // debounce light
+            clearTimeout(ds._t);
+            ds._t = setTimeout(() => paintSalesMobile(), 200);
+          };
+        }
+        return;
+      }
+
+      // Daftar sales
+      const q = mSalesQ.trim().toLowerCase();
+      let rows = list;
+      if (q) rows = list.filter(s => String(s.sales || '').toLowerCase().includes(q));
+      const salesCards = rows.slice(0, 60).map((s, i) => `
+        <button type="button" data-sales="${esc(s.sales)}" class="m-sales-item" style="display:block;width:100%;text-align:left;border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:8px;background:#fff;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;gap:8px;font-weight:900;font-size:.82rem">
+            <span>${i + 1}. ${esc(s.sales)}</span>
+            <span style="color:#1d4ed8">${fmtIDR(s.totalAmt)}</span>
+          </div>
+          <div style="font-size:.68rem;color:#64748b;font-weight:700;margin-top:4px">
+            SAM ${fmtIDR(s.totals?.SAMSUNG || 0)} · Dealer ${fmtN((s.dealers || []).length)} · Belum QVO ${fmtN(s.belumQvoSam)}
+          </div>
+        </button>
+      `).join('') || '<div style="color:#64748b;font-weight:700">Tidak ada sales</div>';
+
+      app.innerHTML = banner() + card('SALES (HP)', `
+        <p style="font-size:.72rem;color:#64748b;font-weight:700;margin-bottom:8px">With Tax · ${esc(filterHint || 'Filter global di desktop lebih lengkap')} · ${fmtN(list.length)} sales</p>
+        <label style="${labelStyle}">Cari sales</label>
+        <input id="mSalesSearch" type="search" value="${esc(mSalesQ)}" placeholder="Ketik nama sales…" style="${selStyle}" />
+        <div style="margin-top:10px">${salesCards}</div>
+      `) + foot();
+
+      document.getElementById('mSalesSearch').oninput = (e) => {
+        mSalesQ = e.target.value || '';
+        clearTimeout(e.target._t);
+        e.target._t = setTimeout(() => paintSalesMobile(), 200);
+      };
+      app.querySelectorAll('.m-sales-item').forEach(btn => {
+        btn.onclick = () => {
+          mSalesFocus = btn.getAttribute('data-sales') || '';
+          mDealerQ = '';
+          paintSalesMobile();
+        };
+      });
+    };
+
+    // —— Kalkulator HP ——
+    const paintCalcMobile = () => {
+      const app = document.getElementById('app');
+      if (!app) return;
+      const pack = DATA.kalkulator || {};
+      const rawItems = pack.items || [];
+      if (!rawItems.length) {
+        app.innerHTML = banner() + card('KALKULATOR', '<p style="font-weight:700;color:#64748b">Sheet KALKULATOR belum ada di data. Jalankan update-data.bat, upload data.json.gz.</p>') + foot();
+        return;
+      }
+      const byMaterial = new Map();
+      for (const it of rawItems) {
+        const mat = String(it.material || '').trim();
+        if (!mat || byMaterial.has(mat)) continue;
+        byMaterial.set(mat, it);
+      }
+      const items = [...byMaterial.values()].sort((a, b) =>
+        String(a.material).localeCompare(String(b.material), 'id')
+      );
+      if (!calcState.material || !byMaterial.has(calcState.material)) {
+        calcState.material = items[0] ? items[0].material : '';
+      }
+      if (!calcState.rebate) calcState.rebate = 'YA';
+      if (calcState.account === 'SEMUA') calcState.account = 'TIDAK';
+      const item = byMaterial.get(calcState.material) || items[0];
+      const m = computeCalcMargin(item, calcState);
+      const fmtRp = (n) => 'Rp ' + Math.round(Number(n) || 0).toLocaleString('id-ID');
+      const marginNeg = m.margin < 0;
+      const lowestNeg = m.hargaLowest < 0;
+
+      const matOpts = items.map(it =>
+        `<option value="${esc(it.material)}" ${it.material === calcState.material ? 'selected' : ''}>${esc(it.material)}</option>`
+      ).join('');
+
+      const toggleRow = (id, label, val, options) => `
+        <label style="${labelStyle}">${label}</label>
+        <select id="${id}" style="${selStyle}">
+          ${options.map(o => `<option value="${o}" ${val === o ? 'selected' : ''}>${o}</option>`).join('')}
+        </select>`;
+
+      app.innerHTML = banner() + card('KALKULATOR MARGIN (HP)', `
+        <label style="${labelStyle}">Material / Type</label>
+        <select id="mCalcMat" style="${selStyle}">${matOpts}</select>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+          ${toggleRow('mCalcCb', 'Cashback', calcState.cashback || 'YA', ['YA', 'TIDAK'])}
+          ${toggleRow('mCalcTi', 'Trade In', calcState.tradeIn || 'YA', ['YA', 'TIDAK'])}
+          ${toggleRow('mCalcAcc', 'Account', calcState.account || 'TIDAK', ['TIDAK', 'SHADOW', 'EC', 'NSP'])}
+          ${toggleRow('mCalcReb', 'Rebate', calcState.rebate || 'YA', ['YA', 'TIDAK'])}
         </div>
-        ${panels[key] || panels.overview}
-        <p style="text-align:center;color:#94a3b8;font-size:.68rem;font-weight:700;padding:8px 0 20px">
-          PT TELETAMA ARTHA MANDIRI · ${esc(DATA.generated || '')}
-        </p>
-      `;
+        ${item.remark ? `<div style="margin-top:10px;background:#fff7ed;border-radius:10px;padding:8px;font-size:.72rem;font-weight:700;color:#9a3412"><strong>REMARK:</strong> ${esc(item.remark)}</div>` : ''}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
+          <div style="background:linear-gradient(135deg,${marginNeg ? '#b91c1c,#ea580c' : '#047857,#0d9488'});color:#fff;border-radius:12px;padding:12px">
+            <div style="font-size:.65rem;font-weight:800;opacity:.9">MARGIN</div>
+            <div style="font-size:1rem;font-weight:900;margin-top:4px">${fmtRp(m.margin)}</div>
+          </div>
+          <div style="background:linear-gradient(135deg,${marginNeg ? '#b91c1c,#ea580c' : '#0B2F6B,#00A3E0'});color:#fff;border-radius:12px;padding:12px">
+            <div style="font-size:.65rem;font-weight:800;opacity:.9">MARGIN %</div>
+            <div style="font-size:1rem;font-weight:900;margin-top:4px">${(m.marginPct * 100).toFixed(2)}%</div>
+          </div>
+        </div>
+        <div style="background:linear-gradient(135deg,${lowestNeg ? '#b91c1c,#ea580c' : '#b45309,#ea580c'});color:#fff;border-radius:12px;padding:12px;margin-top:8px">
+          <div style="font-size:.65rem;font-weight:800;opacity:.9">HARGA LOWEST</div>
+          <div style="font-size:1.1rem;font-weight:900;margin-top:4px">${fmtRp(m.hargaLowest)}</div>
+        </div>
+        <div style="margin-top:12px;font-size:.72rem;font-weight:700;color:#475569;line-height:1.45;background:#f8fafc;border-radius:10px;padding:10px">
+          <div>RRP ${fmtRp(m.rrp)} · STP ${fmtRp(m.stp)}</div>
+          <div style="margin-top:4px">Margin = (RRP−STP)${m.useRebate ? ' + REBATE' : ''}${m.useShadow ? ' + SHADOW' : ''}${m.useEc ? ' + EC' : ''}${m.useNsp ? ' + NSP' : ''} · tanpa CB/TI</div>
+          <div style="margin-top:4px">Lowest = STP − (PWP${m.useCb ? ' + CB' : ''}${m.useTi ? ' + TI' : ''}${m.useRebate ? ' + REBATE' : ''}${m.useShadow ? ' + SHADOW' : ''}${m.useEc ? ' + EC' : ''}${m.useNsp ? ' + NSP' : ''})</div>
+        </div>
+      `) + foot();
+
+      const bind = (id, fn) => {
+        const el = document.getElementById(id);
+        if (el) el.onchange = () => { fn(el.value); paintCalcMobile(); };
+      };
+      bind('mCalcMat', v => { calcState.material = v; });
+      bind('mCalcCb', v => { calcState.cashback = v === 'TIDAK' ? 'TIDAK' : 'YA'; });
+      bind('mCalcTi', v => { calcState.tradeIn = v === 'TIDAK' ? 'TIDAK' : 'YA'; });
+      bind('mCalcAcc', v => { calcState.account = ['SHADOW', 'EC', 'NSP', 'TIDAK'].includes(v) ? v : 'TIDAK'; });
+      bind('mCalcReb', v => { calcState.rebate = v === 'TIDAK' ? 'TIDAK' : 'YA'; });
+    };
+
+    const banner = () => `
+      <div style="background:#ecfdf5;border:2px solid #6ee7b7;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-weight:900;color:#065f46;font-size:.78rem">
+        MODE HP v4 · Sales & Kalkulator aktif · Geser menu bawah
+      </div>`;
+    const foot = () => `
+      <p style="text-align:center;color:#94a3b8;font-size:.68rem;font-weight:700;padding:8px 0 20px">
+        PT TELETAMA ARTHA MANDIRI · ${esc(DATA.generated || '')}
+      </p>`;
+
+    const paint = (key) => {
+      page = key;
       document.querySelectorAll('.nav-btn').forEach(b => {
         b.classList.toggle('on', b.dataset.page === key);
       });
       try { window.scrollTo(0, 0); } catch (_) {}
+
+      if (key === 'sales') {
+        paintSalesMobile();
+        return;
+      }
+      if (key === 'kalkulator') {
+        paintCalcMobile();
+        return;
+      }
+
+      const app = document.getElementById('app');
+      if (!app) return;
+      app.innerHTML = `
+        ${banner()}
+        ${panels[key] || panels.overview}
+        ${foot()}
+      `;
     };
 
     document.getElementById('bottomNav').hidden = false;
@@ -1740,7 +1955,7 @@
       filteredPack = null;
       filteredPackKey = '';
       document.getElementById('subHead').textContent =
-        `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · HP v3`;
+        `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · HP v4`;
       setBootProgress(99, 'Merender menu…');
       await new Promise(r => setTimeout(r, 20));
 
