@@ -692,21 +692,25 @@
 
     .bottom-nav {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
-      padding: 6px 6px calc(6px + var(--safe-b));
+      padding: 6px 0 calc(6px + var(--safe-b));
       background: rgba(255,255,255,.96); backdrop-filter: blur(14px);
       border-top: 1px solid var(--line); box-shadow: 0 -6px 20px rgba(11,47,107,.08);
     }
     .bottom-nav-inner {
       max-width: 720px; margin: 0 auto;
-      display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px;
+      display: flex; flex-wrap: nowrap; gap: 4px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      padding: 0 8px; scrollbar-width: none;
     }
+    .bottom-nav-inner::-webkit-scrollbar { display: none; }
     .nav-btn {
       border: none; background: transparent; color: var(--muted);
-      border-radius: 10px; padding: 6px 2px; font-size: .52rem; font-weight: 800;
+      border-radius: 10px; padding: 8px 10px; font-size: .62rem; font-weight: 800;
       display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer;
       line-height: 1.15; text-align: center;
+      flex: 0 0 auto; min-width: 64px;
     }
-    .nav-btn .ico { font-size: 1.05rem; }
+    .nav-btn .ico { font-size: 1.1rem; }
     .nav-btn.on { color: var(--tam); background: var(--tam-soft); }
 
     /* Review pages */
@@ -996,7 +1000,20 @@
       background: #f8fafc; border-radius: 10px; padding: 8px 10px; line-height: 1.45;
     }
 
-    .loading { min-height: 70vh; display: grid; place-items: center; gap: 12px; color: var(--muted); }
+    .loading {
+      min-height: 70vh; display: grid; place-items: center; gap: 12px; color: var(--muted);
+      padding: 24px 16px; text-align: center;
+    }
+    .loading .load-title { font-weight: 900; color: var(--tam); font-size: .95rem; }
+    .loading .load-sub { font-size: .78rem; font-weight: 700; max-width: 320px; line-height: 1.4; }
+    .loading .load-bar {
+      width: min(280px, 80vw); height: 10px; border-radius: 99px; background: #e2eaf5; overflow: hidden;
+    }
+    .loading .load-bar > i {
+      display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--tam), var(--tam2));
+      transition: width .2s ease;
+    }
+    .loading .load-pct { font-size: .8rem; font-weight: 900; color: var(--tam2); }
     .spinner {
       width: 42px; height: 42px; border-radius: 50%;
       border: 3px solid #cfe0f5; border-top-color: var(--tam2);
@@ -1046,7 +1063,13 @@
   </header>
 
   <main class="wrap" id="app">
-    <div class="loading"><div class="spinner"></div><div>Memuat DASHBOARD UJUNG WETAN…</div></div>
+    <div class="loading" id="bootLoading">
+      <div class="spinner"></div>
+      <div class="load-title">Memuat DASHBOARD UJUNG WETAN</div>
+      <div class="load-sub" id="bootLoadMsg">Menyiapkan unduhan data… Di HP bisa 15–60 detik (Wi‑Fi lebih cepat).</div>
+      <div class="load-bar"><i id="bootLoadBar"></i></div>
+      <div class="load-pct" id="bootLoadPct">0%</div>
+    </div>
   </main>
 
   <nav class="bottom-nav" id="bottomNav" hidden>
@@ -1464,24 +1487,82 @@
     formatter: (v) => fmtShort(v)
   };
 
-  /** Muat JSON biasa atau .gz (untuk GitHub Pages — hindari CORS Releases) */
+  function setBootProgress(pct, msg) {
+    const bar = document.getElementById('bootLoadBar');
+    const pctEl = document.getElementById('bootLoadPct');
+    const msgEl = document.getElementById('bootLoadMsg');
+    const p = Math.max(0, Math.min(100, Math.round(pct)));
+    if (bar) bar.style.width = p + '%';
+    if (pctEl) pctEl.textContent = p + '%';
+    if (msgEl && msg) msgEl.textContent = msg;
+  }
+
+  /** Muat JSON / .gz dengan progress (penting di HP + jaringan lambat) */
   async function loadDashboardData(url) {
-    const res = await fetch(url, { cache: 'no-store', mode: 'cors' });
-    if (!res.ok) {
-      throw new Error('HTTP ' + res.status + ' · ' + url);
-    }
+    // cache default: buka ulang di HP lebih cepat
+    const res = await fetch(url, { cache: 'default', mode: 'cors' });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' · ' + url);
+
     const looksGz = /\.gz(\?|$)/i.test(url)
       || (res.headers.get('content-encoding') || '').toLowerCase().includes('gzip')
       || (res.headers.get('content-type') || '').toLowerCase().includes('gzip');
+
+    const total = Number(res.headers.get('content-length')) || 0;
+    let received = 0;
+    const reader = res.body && res.body.getReader ? res.body.getReader() : null;
+
+    let bytes;
+    if (reader) {
+      const chunks = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.byteLength || value.length || 0;
+        if (total > 0) {
+          // unduh = 0–70%
+          setBootProgress((received / total) * 70, 'Mengunduh data… ' + (received / 1e6).toFixed(1) + ' MB'
+            + (total ? ' / ' + (total / 1e6).toFixed(1) + ' MB' : '')
+            + ' · pakai Wi‑Fi jika lambat');
+        } else {
+          setBootProgress(Math.min(65, 10 + received / 1e6 * 4), 'Mengunduh data… ' + (received / 1e6).toFixed(1) + ' MB');
+        }
+      }
+      const len = chunks.reduce((a, c) => a + c.byteLength, 0);
+      bytes = new Uint8Array(len);
+      let off = 0;
+      for (const c of chunks) { bytes.set(c, off); off += c.byteLength; }
+    } else {
+      setBootProgress(40, 'Mengunduh data…');
+      const buf = await res.arrayBuffer();
+      bytes = new Uint8Array(buf);
+    }
+
+    setBootProgress(75, looksGz ? 'Membuka kompresi data…' : 'Membaca data…');
+    await new Promise(r => setTimeout(r, 30)); // biar UI HP sempat update
+
+    let text;
     if (looksGz) {
       if (typeof DecompressionStream === 'undefined') {
-        throw new Error('Browser tidak mendukung gzip. Pakai Chrome / Edge terbaru.');
+        throw new Error('Browser tidak mendukung gzip. Update Chrome/Safari di HP.');
       }
-      const stream = res.body.pipeThrough(new DecompressionStream('gzip'));
-      const text = await new Response(stream).text();
-      return JSON.parse(text);
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+      text = await new Response(stream).text();
+    } else {
+      text = new TextDecoder('utf-8').decode(bytes);
     }
-    return res.json();
+
+    setBootProgress(90, 'Memproses data di HP (bisa terasa berat)…');
+    await new Promise(r => setTimeout(r, 40));
+    // parse di next tick agar spinner tidak freeze total di HP
+    const data = await new Promise((resolve, reject) => {
+      setTimeout(() => {
+        try { resolve(JSON.parse(text)); }
+        catch (err) { reject(err); }
+      }, 0);
+    });
+    setBootProgress(98, 'Menyiapkan tampilan…');
+    return data;
   }
 
   function resolveDataUrl() {
@@ -1500,28 +1581,36 @@
   async function boot() {
     const dataUrl = resolveDataUrl();
     try {
+      setBootProgress(2, 'Menghubungkan ke server data…');
       DATA = await loadDashboardData(dataUrl);
       filteredPack = null;
       filteredPackKey = '';
       document.getElementById('subHead').textContent =
         `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · Nett No Tax`;
+      setBootProgress(99, 'Merender menu…');
+      await new Promise(r => setTimeout(r, 20));
       buildUI();
       document.getElementById('bottomNav').hidden = false;
+      // Di HP: render page aktif saja (apply sudah lazy); sedikit delay agar UI tidak blank
+      await new Promise(r => setTimeout(r, 10));
       apply();
+      setBootProgress(100, 'Siap');
     } catch (e) {
       const msg = String(e && e.message ? e.message : e);
       const isCors = /failed to fetch|networkerror|cors|load failed/i.test(msg);
+      const isMem = /out of memory|allocation|maximum call/i.test(msg);
       document.getElementById('app').innerHTML = `<div class="section" style="margin-top:20px;text-align:center">
         <h3 style="color:var(--tam)">Gagal memuat data</h3>
         <p class="empty">${esc(msg)}</p>
         <p class="empty" style="margin-top:8px;font-size:.8rem">Sumber: ${esc(dataUrl)}</p>
         <p style="color:var(--muted);font-size:.85rem;margin-top:10px;text-align:left;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.45">
-          ${isCors
-            ? '<strong>Penyebab umum GitHub:</strong> URL Releases tidak bisa di-fetch dari Pages (diblokir CORS).<br><strong>Solusi:</strong> pakai <code>data.json.gz</code> di repo (bukan Releases). Lihat CARA-GITHUB.txt bagian PERBAIKI GAGAL LOAD.'
-            : '<strong>Cek:</strong> URL data bisa dibuka di browser? config.js sudah benar? File sudah di-commit ke branch Pages?'}
+          ${isMem
+            ? '<strong>HP kehabisan memori.</strong> Tutup tab lain, pakai Chrome, atau buka lewat Wi‑Fi. Data dashboard sangat besar (~150 MB di memori).'
+            : isCors
+            ? '<strong>CORS / jaringan:</strong> pastikan data.json.gz di root repo Pages. Lihat CARA-GITHUB.txt.'
+            : '<strong>Cek:</strong> Wi‑Fi stabil? URL data.json.gz bisa dibuka? Coba refresh / buka di Chrome HP.'}
           <br><br>
-          Lokal: start.bat → http://127.0.0.1:8765 · dataUrl: data.json<br>
-          GitHub: dataUrl: 'data.json.gz' (file di root repo, ~15 MB)
+          Tips HP: Wi‑Fi · Chrome · jangan buka banyak tab · tunggu progress 100%
         </p>
       </div>`;
     }
