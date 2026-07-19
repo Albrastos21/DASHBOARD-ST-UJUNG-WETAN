@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="50%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="r" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FDE68A"/>
+      <stop offset="100%" stop-color="#F472B6"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#g)"/>
+  <circle cx="64" cy="52" r="28" fill="none" stroke="url(#r)" stroke-width="5"/>
+  <path d="M64 32 L68.8 48 L85 52 L68.8 56 L64 72 L59.2 56 L43 52 L59.2 48 Z" fill="#fff"/>
+  <circle cx="86" cy="34" r="4" fill="#FDE68A"/>
+  <text x="64" y="108" text-anchor="middle" font-family="Arial Black, Arial, sans-serif"
+        font-size="14" font-weight="900" fill="#fff" letter-spacing="1">REBORN</text>
+</svg>

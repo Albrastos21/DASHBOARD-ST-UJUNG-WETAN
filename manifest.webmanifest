@@ -1,0 +1,19 @@
+{
+  "name": "ST Brand Meeting 2026",
+  "short_name": "ST Meeting",
+  "description": "Dashboard sell-through brand Samsung focus untuk meeting",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#070b16",
+  "theme_color": "#070b16",
+  "orientation": "portrait-primary",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
