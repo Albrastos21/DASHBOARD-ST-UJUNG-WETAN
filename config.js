@@ -14,5 +14,5 @@
  *   dataUrl: 'https://pub-xxxx.r2.dev/data.json'
  */
 window.DASHBOARD_CONFIG = {
-  dataUrl: 'data.json',
+  dataUrl: 'https://github.com/Albrastos21/DASHBOARD-ST-UJUNG-WETAN/releases/download/V1/data.json',
 };
