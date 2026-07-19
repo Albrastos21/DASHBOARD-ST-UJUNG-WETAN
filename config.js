@@ -14,7 +14,7 @@
  */
 window.DASHBOARD_CONFIG = {
   // Lokal default:
-  dataUrl: 'data.json',
+  dataUrl: 'data.json.gz',
   // Setelah deploy GitHub Pages, GANTI menjadi:
   // dataUrl: 'data.json.gz',
 };
