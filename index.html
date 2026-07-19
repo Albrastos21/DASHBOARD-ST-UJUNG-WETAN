@@ -364,8 +364,19 @@
       margin-bottom: 10px;
     }
 
-    .page { display: none; animation: fade .22s ease; }
-    .page.on { display: block; }
+    .page { display: none !important; }
+    .page.on { display: block !important; visibility: visible !important; opacity: 1 !important; min-height: 40vh; }
+    /* Pastikan konten tidak ketutup header/nav di HP */
+    .wrap { position: relative; z-index: 1; }
+    .page-error {
+      margin: 12px 0; padding: 14px; border-radius: 14px;
+      background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+      font-size: .82rem; font-weight: 700; line-height: 1.4;
+    }
+    .page-wait {
+      margin: 16px 0; padding: 20px 14px; text-align: center;
+      color: var(--muted); font-weight: 700; font-size: .85rem;
+    }
     @keyframes fade { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 
     .hero {
@@ -1766,7 +1777,17 @@
   function filteredDealer() {
     return (DATA.dealer_grain || []).filter(r => passFilter(r));
   }
-  function brandAgg(rows, dealerRows) {
+  function isMobileDevice() {
+    try {
+      return window.matchMedia('(max-width: 900px)').matches
+        || /Android|iPhone|iPad|iPod|Mobile|webOS/i.test(navigator.userAgent || '');
+    } catch {
+      return true;
+    }
+  }
+
+  function brandAgg(rows, dealerRows, opts = {}) {
+    const light = !!opts.light; // HP: skip sku_items (sangat berat)
     const o = Object.fromEntries(BRANDS.map(b => [b, {qty:0, amt:0, bo:0, sku:0}]));
     for (const r of rows) if (o[r.brand]) { o[r.brand].qty += r.qty; o[r.brand].amt += r.amt; }
     // BO unik per brand dari dealer (Sold to Party)
@@ -1778,7 +1799,7 @@
       if (!boSets[b]) continue;
       const name = r.dealer || r.soldto;
       if (name) boSets[b].add(name);
-      if (Array.isArray(r.sku_items)) {
+      if (!light && Array.isArray(r.sku_items)) {
         for (const it of r.sku_items) {
           const sk = normalizeSku(b, it.sku || it.unit);
           if (sk) skuSets[b].add(sk);
@@ -1822,18 +1843,21 @@
       : `<span class="tag">Semua tahun · Semua brand · Semua periode · Semua DEPO</span>`;
   }
 
-  /** Filter + agregasi sekali; cache selama slicer tidak berubah */
+  /** Filter + agregasi; di HP hindari scan dealer_grain 130k kecuali menu yang butuh */
   function getFilteredPack(force = false) {
-    const key = stateFilterKey();
+    const mobile = isMobileDevice();
+    const needDealers = !mobile || ['depo', 'sales', 'review-dealer', 'review-sales', 'outlet'].includes(page);
+    const key = stateFilterKey() + '|' + (needDealers ? 'D' : 'L') + '|' + page;
     if (!force && filteredPack && filteredPackKey === key) return filteredPack;
     const rows = filteredGrain();
-    const dealers = filteredDealer();
-    const brands = brandAgg(rows, dealers);
+    // HP + menu Ringkas/Brand/Kalkulator: jangan filter 130k dealer dulu (sering bikin blank/freeze)
+    const dealers = needDealers ? filteredDealer() : [];
+    const brands = brandAgg(rows, dealers, { light: mobile });
     const actB = activeBrands();
     const totalAmt = actB.reduce((s, b) => s + brands[b].amt, 0);
     const totalQty = actB.reduce((s, b) => s + brands[b].qty, 0);
     const ranked = [...actB].sort((a, b) => brands[b].amt - brands[a].amt);
-    filteredPack = { rows, dealers, brands, totalAmt, totalQty, ranked };
+    filteredPack = { rows, dealers, brands, totalAmt, totalQty, ranked, light: !needDealers };
     filteredPackKey = key;
     return filteredPack;
   }
@@ -1870,13 +1894,41 @@
 
   /**
    * apply(): update tag + render halaman aktif.
-   * - Pindah menu: filter di-cache → cepat
-   * - Ubah slicer: filter dihitung ulang, hanya page aktif di-render
+   * Error di HP ditampilkan di halaman (bukan blank diam-diam).
    */
   function apply() {
     updateActiveTags();
-    const pack = getFilteredPack();
-    renderCurrentPage(pack);
+    // pastikan page aktif terlihat
+    document.querySelectorAll('.page').forEach(p => {
+      p.classList.toggle('on', p.id === 'page-' + page);
+    });
+    const host = document.getElementById('page-' + page);
+    if (host) {
+      host.innerHTML = '<div class="page-wait">⏳ Menyiapkan isi menu…</div>';
+    }
+    try {
+      const pack = getFilteredPack();
+      renderCurrentPage(pack);
+      if (host && !String(host.innerHTML || '').replace(/\s/g, '')) {
+        host.innerHTML = '<div class="page-error">Konten kosong. Geser ke menu lain atau refresh.</div>';
+      }
+      // HP: scroll ke konten (bukan cuma logo)
+      try {
+        const slicer = document.querySelector('.slicer');
+        if (slicer) slicer.scrollIntoView({ block: 'start', behavior: 'instant' in window ? 'auto' : 'auto' });
+      } catch (_) { /* ignore */ }
+    } catch (err) {
+      console.error('apply failed', err);
+      const msg = String(err && err.message ? err.message : err);
+      if (host) {
+        host.innerHTML = `<div class="page-error">
+          <strong>Gagal menampilkan menu di perangkat ini.</strong><br>
+          ${esc(msg)}<br><br>
+          Coba: Wi‑Fi · Chrome · tutup tab lain · refresh.<br>
+          Menu Ringkas/Brand lebih ringan; Review Dealer/Sales lebih berat di HP.
+        </div>`;
+      }
+    }
   }
 
   /** Sales sheet + live MASTER (with tax) — dipakai menu Sales & Review */
@@ -2043,9 +2095,10 @@
   }
 
   function renderOverview(rows, brands, totalAmt, totalQty, ranked) {
-    const sam = brands.SAMSUNG;
+    const sam = brands.SAMSUNG || { amt: 0, qty: 0, bo: 0 };
     const samRank = ranked.indexOf('SAMSUNG') + 1;
     const el = document.getElementById('page-overview');
+    if (!el) return;
     el.innerHTML = `
       <div class="hero">
         <div class="eyebrow">DASHBOARD UJUNG WETAN · REBORN</div>
@@ -2076,60 +2129,88 @@
       <div class="talk-card" id="talkOverview"></div>
     `;
 
-    document.getElementById('ovKpi').innerHTML = ranked.map((b,i) => {
-      const share = totalAmt ? brands[b].amt/totalAmt : 0;
-      return `<div class="kpi ${b}">
-        <div class="rank">#${i+1}</div>
-        <div class="brand">${b}</div>
-        <div class="val">${fmtIDR(brands[b].amt)}</div>
-        <div class="meta">Qty ${fmtN(brands[b].qty)} · BO ${fmtN(brands[b].bo||0)} · ${fmtPct(share)}</div>
-        <div class="share-bar"><i style="width:${(share*100).toFixed(1)}%;background:${COLORS[b]}"></i></div>
-      </div>`;
-    }).join('');
+    const ovKpi = document.getElementById('ovKpi');
+    if (ovKpi) {
+      ovKpi.innerHTML = ranked.map((b,i) => {
+        const share = totalAmt ? brands[b].amt/totalAmt : 0;
+        return `<div class="kpi ${b}">
+          <div class="rank">#${i+1}</div>
+          <div class="brand">${b}</div>
+          <div class="val">${fmtIDR(brands[b].amt)}</div>
+          <div class="meta">Qty ${fmtN(brands[b].qty)} · BO ${fmtN(brands[b].bo||0)} · ${fmtPct(share)}</div>
+          <div class="share-bar"><i style="width:${(share*100).toFixed(1)}%;background:${COLORS[b]}"></i></div>
+        </div>`;
+      }).join('');
+    }
 
-    destroyChart('share');
-    charts.share = new Chart(document.getElementById('cShare'), {
-      type: 'doughnut',
-      data: {
-        labels: ranked,
-        datasets: [{
-          data: ranked.map(b => brands[b].amt),
-          backgroundColor: ranked.map(b => COLORS[b]),
-          borderWidth: 2, borderColor: '#fff'
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false, cutout: '55%',
-        plugins: {
-          legend: { position: 'bottom', labels: { color:'#334155', boxWidth:12, font:{ size:11, weight:'700' } } },
-          datalabels: {
-            color: '#fff',
-            font: { weight: '900', size: 11 },
-            formatter: (v) => {
-              const p = totalAmt ? (v/totalAmt*100) : 0;
-              return p >= 6 ? fmtShort(v) + '\n' + p.toFixed(0) + '%' : '';
-            },
-            textAlign: 'center',
-            anchor: 'center',
-            clamp: true
+    // Chart + highlight: dibungkus try/catch agar HP tetap tampil KPI jika chart gagal
+    try {
+      destroyChart('share');
+      const cShare = document.getElementById('cShare');
+      if (cShare && typeof Chart !== 'undefined') {
+        charts.share = new Chart(cShare, {
+          type: 'doughnut',
+          data: {
+            labels: ranked,
+            datasets: [{
+              data: ranked.map(b => brands[b].amt),
+              backgroundColor: ranked.map(b => COLORS[b]),
+              borderWidth: 2, borderColor: '#fff'
+            }]
           },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => {
-                const v = ctx.raw||0;
-                const p = totalAmt ? (v/totalAmt*100).toFixed(1) : 0;
-                return ` ${ctx.label}: ${fmtIDR(v)} (${p}%)`;
+          options: {
+            responsive: true, maintainAspectRatio: false, cutout: '55%',
+            plugins: {
+              legend: { position: 'bottom', labels: { color:'#334155', boxWidth:12, font:{ size:11, weight:'700' } } },
+              datalabels: {
+                color: '#fff',
+                font: { weight: '900', size: 11 },
+                formatter: (v) => {
+                  const p = totalAmt ? (v/totalAmt*100) : 0;
+                  return p >= 6 ? fmtShort(v) + '\n' + p.toFixed(0) + '%' : '';
+                },
+                textAlign: 'center',
+                anchor: 'center',
+                clamp: true
+              },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const v = ctx.raw||0;
+                    const p = totalAmt ? (v/totalAmt*100).toFixed(1) : 0;
+                    return ` ${ctx.label}: ${fmtIDR(v)} (${p}%)`;
+                  }
+                }
               }
             }
           }
+        });
+      }
+    } catch (chartErr) {
+      console.warn('chart overview skip', chartErr);
+    }
+
+    try {
+      if (!isMobileDevice()) {
+        hlSlides = buildHighlightSlides(rows, brands, totalAmt);
+        startHighlight();
+      } else {
+        const stage = document.getElementById('hlStage');
+        if (stage) {
+          stage.innerHTML = `<div class="hl-card on">
+            <div class="hl-kicker">MODE HP</div>
+            <div class="hl-title">Ringkas aktif</div>
+            <div class="hl-value">${fmtIDR(totalAmt)}</div>
+            <div class="hl-meta">Total 4 brand · highlight detail di desktop</div>
+          </div>`;
         }
       }
-    });
+    } catch (hlErr) {
+      console.warn('highlight skip', hlErr);
+    }
 
-    hlSlides = buildHighlightSlides(rows, brands, totalAmt);
-    startHighlight();
-
-    document.getElementById('talkOverview').innerHTML = `
+    const talk = document.getElementById('talkOverview');
+    if (talk) talk.innerHTML = `
       <h4>🎙 Talking points</h4>
       <ol>
         <li>Highlight bergeser otomatis: <strong>Share SAM→XIM→TNO→APP</strong>, lalu <strong>DEPO terkuat→terlemah</strong>, lalu <strong>Sales terkuat→terlemah</strong>.</li>
