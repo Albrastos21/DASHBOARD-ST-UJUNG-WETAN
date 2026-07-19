@@ -1,20 +1,12 @@
 /**
  * Sumber data dashboard
  *
- * LOKAL (start.bat):
- *   dataUrl: 'data.json'
+ * LOKAL:     dataUrl: 'data.json'
+ * GITHUB:    dataUrl: 'data.json.gz'   ← file ini HARUS ada di root repo
  *
- * GITHUB PAGES (disarankan — hindari CORS):
- *   1. Upload data.json.gz ke root repo (bukan Releases)
- *   2. dataUrl: 'data.json.gz'
- *   Jangan pakai URL .../releases/download/... — browser diblokir CORS.
- *
- * Buat ulang .gz setelah update data:
- *   python compress-data.py
+ * Catatan: jika config.js 404 di Pages, index.html otomatis fallback ke data.json.gz
+ * di domain github.io — tetap disarankan upload config.js agar eksplisit.
  */
 window.DASHBOARD_CONFIG = {
-  // Lokal default:
   dataUrl: 'data.json.gz',
-  // Setelah deploy GitHub Pages, GANTI menjadi:
-  // dataUrl: 'data.json.gz',
 };

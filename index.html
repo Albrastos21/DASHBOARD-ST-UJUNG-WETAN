@@ -1480,8 +1480,17 @@
     return res.json();
   }
 
+  function resolveDataUrl() {
+    const fromCfg = window.DASHBOARD_CONFIG && window.DASHBOARD_CONFIG.dataUrl;
+    if (fromCfg) return fromCfg;
+    // Tanpa config.js: di GitHub Pages pakai data.json.gz; lokal pakai data.json
+    const host = (location.hostname || '').toLowerCase();
+    if (host.endsWith('github.io') || host.endsWith('pages.dev')) return 'data.json.gz';
+    return 'data.json';
+  }
+
   async function boot() {
-    const dataUrl = (window.DASHBOARD_CONFIG && window.DASHBOARD_CONFIG.dataUrl) || 'data.json';
+    const dataUrl = resolveDataUrl();
     try {
       DATA = await loadDashboardData(dataUrl);
       filteredPack = null;
