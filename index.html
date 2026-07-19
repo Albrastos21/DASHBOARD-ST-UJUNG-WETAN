@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>DASHBOARD UJUNG WETAN · HP v5</title>
+  <title>DASHBOARD UJUNG WETAN · HP v6</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- Default data URL (GitHub Pages). Opsional: config.js di root bisa menimpa ini. -->
@@ -1713,7 +1713,7 @@
           </div>
         </div>
         <p style="margin-top:10px;font-size:.72rem;color:#64748b;font-weight:700;line-height:1.4">
-          Update data: ${esc(DATA.generated || '-')} · Mode HP ringan (v5)
+          Update data: ${esc(DATA.generated || '-')} · Mode HP ringan (v6)
         </p>
       `) + card('SHARE 4 BRAND', brandCards),
 
@@ -1735,12 +1735,23 @@
       `),
     };
 
-    // —— Sales HP (filter + daftar sales + detail dealer) ——
+    // —— Sales HP (filter + SKU + daftar sales + detail dealer) ——
     let mSalesPack = null;
     let mSalesFocus = '';
     let mSalesQ = '';
     let mDealerQ = '';
     let mFilterOpen = true; // panel filter default terbuka di Sales
+    const skuClassOptsMobile = [
+      { v: '0-1', t: 'SKU 0–1' },
+      { v: '2-3', t: 'SKU 2–3' },
+      { v: '4-6', t: 'SKU 4–6' },
+      { v: '7-10', t: 'SKU 7–10' },
+      { v: 'gt10', t: 'SKU >10' },
+    ];
+    const qvoOptsMobile = [
+      { v: 'SUDAH', t: 'Sudah QVO Sam' },
+      { v: 'BELUM', t: 'Belum QVO Sam' },
+    ];
     const getMSales = () => {
       if (!mSalesPack) {
         try { mSalesPack = buildSalesLiveList(); }
@@ -1757,6 +1768,50 @@
     const selStyle = 'width:100%;border:1px solid #c5d4e8;border-radius:10px;padding:10px;font-size:.85rem;font-weight:700;background:#fff;margin-top:4px';
     const labelStyle = 'font-size:.68rem;font-weight:900;color:#64748b;display:block;margin-top:8px';
 
+    /** Filter dealer by klasifikasi SKU + QVO Samsung (mode HP) */
+    const filterDealersBySkuQvo = (dealers) => {
+      let d = Array.isArray(dealers) ? dealers.slice() : [];
+      if (!isAll(selectedSkuClass)) {
+        d = d.filter(x => selectedSkuClass.some(cls => matchSkuClass(Number(x.sku) || 0, cls)));
+      }
+      if (!isAll(selectedQvo)) {
+        d = d.filter(x => {
+          const sudah = isSalesQvo(x.SAMSUNG);
+          if (sudah && matchMulti(selectedQvo, 'SUDAH')) return true;
+          if (!sudah && matchMulti(selectedQvo, 'BELUM')) return true;
+          return false;
+        });
+      }
+      return d;
+    };
+
+    /** Sales list disesuaikan: totals dihitung ulang dari dealer yang lolos filter SKU/QVO */
+    const salesListWithSkuFilter = (list, brandCols) => {
+      const needDealerFilter = !isAll(selectedSkuClass) || !isAll(selectedQvo);
+      if (!needDealerFilter) return list;
+      return list.map(s => {
+        const dealers = filterDealersBySkuQvo(s.dealers || []);
+        const totals = Object.fromEntries(brandCols.map(b => [b, dealers.reduce((a, d) => a + (Number(d[b]) || 0), 0)]));
+        const bo = Object.fromEntries(brandCols.map(b => [b, dealers.filter(d => (Number(d[b]) || 0) > 0).length]));
+        const qvo = Object.fromEntries(brandCols.map(b => [b, dealers.filter(d => isSalesQvo(d[b])).length]));
+        const totalAmt = brandCols.reduce((a, b) => a + totals[b], 0);
+        const belumQvoSam = dealers.filter(d => !isSalesQvo(d.SAMSUNG)).length;
+        const sudahQvoSam = dealers.filter(d => isSalesQvo(d.SAMSUNG)).length;
+        return {
+          ...s,
+          dealers,
+          totals,
+          bo,
+          qvo,
+          totalAmt,
+          belumQvoSam,
+          sudahQvoSam,
+          dealer_count: dealers.length,
+        };
+      }).filter(s => (s.dealers || []).length > 0)
+        .sort((a, b) => b.totalAmt - a.totalAmt);
+    };
+
     const filterSummaryText = () => {
       const bits = [];
       if (!isAll(state.year)) bits.push('Thn ' + fmtMulti(state.year, '', 3));
@@ -1765,13 +1820,18 @@
       if (!isAll(state.month)) bits.push('Bln ' + fmtMulti(state.month, '', 4));
       if (!isAll(state.week)) bits.push('W ' + fmtMulti(state.week, '', 2));
       if (!isAll(state.depo)) bits.push(fmtMulti(state.depo, '', 2));
-      return bits.length ? bits.join(' · ') : 'Semua periode · Semua brand · Semua DEPO';
+      if (!isAll(selectedSkuClass)) {
+        const map = Object.fromEntries(skuClassOptsMobile.map(o => [o.v, o.t]));
+        bits.push(selectedSkuClass.map(c => map[c] || c).join(', '));
+      }
+      if (!isAll(selectedQvo)) bits.push('QVO ' + selectedQvo.join('/'));
+      return bits.length ? bits.join(' · ') : 'Semua periode · Semua brand · Semua DEPO · Semua SKU';
     };
 
     const salesFilterHtml = () => `
       <div style="background:linear-gradient(180deg,#f0f7ff,#ffffff);border:2px solid #b7d4ef;border-radius:14px;padding:12px;margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
-          <div style="font-size:.78rem;font-weight:900;color:#0B2F6B">FILTER DATA</div>
+          <div style="font-size:.78rem;font-weight:900;color:#0B2F6B">FILTER DATA + SKU</div>
           <button type="button" id="mFilToggle" style="border:1px solid #9fd4f0;background:#fff;color:#0B2F6B;border-radius:999px;padding:6px 12px;font-weight:900;font-size:.68rem">
             ${mFilterOpen ? 'Sembunyikan ▲' : 'Tampilkan ▼'}
           </button>
@@ -1805,8 +1865,19 @@
               <label style="${labelStyle};margin-top:0">DEPO</label>
               <div id="mFilD"></div>
             </div>
+            <div class="field" style="min-width:0;grid-column:1/-1">
+              <label style="${labelStyle};margin-top:0">Klasifikasi SKU (jml SKU dealer)</label>
+              <div id="mFilSku"></div>
+            </div>
+            <div class="field" style="min-width:0;grid-column:1/-1">
+              <label style="${labelStyle};margin-top:0">QVO Samsung</label>
+              <div id="mFilQvo"></div>
+            </div>
           </div>
-          <button type="button" id="mFilReset" style="margin-top:12px;width:100%;border:none;border-radius:12px;padding:11px;background:linear-gradient(135deg,#0B2F6B,#00A3E0);color:#fff;font-weight:900;font-size:.8rem">
+          <p style="margin-top:8px;font-size:.65rem;font-weight:700;color:#94a3b8;line-height:1.35">
+            SKU 0–1 / 2–3 / 4–6 / 7–10 / &gt;10 · QVO Sam = value Samsung ≥ ${fmtIDR(QVO_THRESHOLD_SALES)}
+          </p>
+          <button type="button" id="mFilReset" style="margin-top:10px;width:100%;border:none;border-radius:12px;padding:11px;background:linear-gradient(135deg,#0B2F6B,#00A3E0);color:#fff;font-weight:900;font-size:.8rem">
             Reset semua filter
           </button>
         </div>
@@ -1816,24 +1887,30 @@
       const meta = DATA.meta || {};
       const depos = (meta.depos || []).filter(d => d !== 'Unknown');
       const weeks = [...(meta.weeks || [])].reverse();
-      const onFil = () => {
+      const onFil = (opts = {}) => {
         invalidateMSales();
-        mSalesFocus = ''; // kembali ke daftar agar angka filter terlihat
-        mDealerQ = '';
+        if (opts.keepFocus !== true) {
+          mSalesFocus = '';
+          mDealerQ = '';
+        }
         paintSalesMobile();
         try { toast('Filter Sales diperbarui'); } catch (_) {}
       };
-      const mount = (id, key, options, allLabel) => {
+      const mount = (id, key, options, allLabel, isStateKey = true) => {
         const host = document.getElementById(id);
         if (!host) return;
+        const selected = isStateKey ? state[key] : (key === 'sku' ? selectedSkuClass : selectedQvo);
         mountMultiSelect(host, {
           options,
-          selected: state[key],
+          selected,
           allLabel,
           searchPlaceholder: 'Cari…',
           onChange: (vals) => {
-            state[key] = vals;
-            onFil();
+            if (isStateKey) state[key] = vals;
+            else if (key === 'sku') selectedSkuClass = vals;
+            else if (key === 'qvo') selectedQvo = vals;
+            // SKU/QVO filter: biarkan tetap di detail sales jika sedang dibuka
+            onFil({ keepFocus: !isStateKey && !!mSalesFocus });
           },
         });
       };
@@ -1843,6 +1920,8 @@
       mount('mFilM', 'month', meta.months || MONTHS, 'Semua Bulan');
       mount('mFilW', 'week', weeks, 'Semua Minggu');
       mount('mFilD', 'depo', depos, 'Semua DEPO');
+      mount('mFilSku', 'sku', skuClassOptsMobile, 'Semua klasifikasi SKU', false);
+      mount('mFilQvo', 'qvo', qvoOptsMobile, 'Semua (Sudah + Belum QVO)', false);
 
       const tog = document.getElementById('mFilToggle');
       if (tog) {
@@ -1856,6 +1935,8 @@
         rst.onclick = () => {
           state = { year: [], quartal: [], month: [], week: [], depo: [], brand: [] };
           selectedSalesFilter = [];
+          selectedSkuClass = [];
+          selectedQvo = [];
           invalidateMSales();
           mSalesFocus = '';
           mSalesQ = '';
@@ -1869,12 +1950,15 @@
     const paintSalesMobile = () => {
       const app = document.getElementById('app');
       if (!app) return;
-      const { list, brandCols, filterHint } = getMSales();
+      const pack = getMSales();
+      const brandCols = pack.brandCols || BRANDS;
+      const filterHint = pack.filterHint || '';
+      const list = salesListWithSkuFilter(pack.list || [], brandCols);
       if (!list.length) {
         app.innerHTML = banner() + salesFilterHtml() + card('SALES', `
           <p style="font-weight:700;color:#64748b;line-height:1.45">
-            Tidak ada data sales untuk filter ini, atau sheet SALES belum tersedia.
-            Ubah filter / Reset, atau update data.json.gz.
+            Tidak ada sales/dealer untuk filter ini (termasuk filter SKU / QVO).
+            Ubah atau <strong>Reset</strong> filter.
           </p>`) + foot();
         mountSalesFilters();
         return;
@@ -1893,6 +1977,9 @@
           const aq = isSalesQvo(a.SAMSUNG) ? 1 : 0;
           const bq = isSalesQvo(b.SAMSUNG) ? 1 : 0;
           if (aq !== bq) return aq - bq;
+          const sa = Number(a.sku) || 0;
+          const sb = Number(b.sku) || 0;
+          if (sa !== sb) return sb - sa;
           const ta = brandCols.reduce((x, br) => x + (Number(a[br]) || 0), 0);
           const tb = brandCols.reduce((x, br) => x + (Number(b[br]) || 0), 0);
           return tb - ta;
@@ -1912,8 +1999,10 @@
         const dealerCards = show.map((d, i) => {
           const tot = brandCols.reduce((a, b) => a + (Number(d[b]) || 0), 0);
           const belum = !isSalesQvo(d.SAMSUNG);
+          const skuN = Number(d.sku) || 0;
           return `<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px;margin-bottom:8px;${belum ? 'background:#fef2f2' : 'background:#fff'}">
             <div style="font-weight:900;font-size:.8rem;line-height:1.3">${i + 1}. ${esc(d.dealer || '-')}${belum ? ' <span style="color:#b91c1c;font-size:.65rem">BELUM QVO</span>' : ''}</div>
+            <div style="margin-top:4px;font-size:.68rem;font-weight:800;color:#7c3aed">SKU ${fmtN(skuN)}</div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;font-size:.68rem;font-weight:800">
               <span style="color:#1d4ed8">SAM ${fmtIDR(d.SAMSUNG)}</span>
               <span style="color:#ea580c">XIM ${fmtIDR(d.XIAOMI)}</span>
@@ -1922,7 +2011,7 @@
             </div>
             <div style="margin-top:6px;font-weight:900;font-size:.78rem">Total ${fmtIDR(tot)}</div>
           </div>`;
-        }).join('') || '<div style="color:#64748b;font-weight:700">Tidak ada dealer</div>';
+        }).join('') || '<div style="color:#64748b;font-weight:700">Tidak ada dealer untuk filter SKU/QVO/cari</div>';
 
         app.innerHTML = banner() + salesFilterHtml() + card('SALES · ' + esc(s.sales), `
           <button type="button" id="mSalesBack" style="border:1px solid #9fd4f0;background:#e6f6fc;color:#0B2F6B;border-radius:10px;padding:8px 12px;font-weight:900;font-size:.75rem;margin-bottom:10px">← Kembali ke daftar sales</button>
@@ -1930,6 +2019,7 @@
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">${brandChips}</div>
           <div style="background:#fff7ed;border-radius:10px;padding:8px;font-size:.72rem;font-weight:800;color:#c2410c;margin-bottom:10px">
             Belum QVO Samsung: ${fmtN(s.belumQvoSam)} · Sudah: ${fmtN(s.sudahQvoSam)}
+            ${!isAll(selectedSkuClass) ? ' · Filter SKU aktif' : ''}
           </div>
           <label style="${labelStyle}">Cari dealer</label>
           <input id="mDealerSearch" type="search" value="${esc(mDealerQ)}" placeholder="Ketik nama dealer…" style="${selStyle}" />
@@ -1954,17 +2044,21 @@
       const q = mSalesQ.trim().toLowerCase();
       let rows = list;
       if (q) rows = list.filter(s => String(s.sales || '').toLowerCase().includes(q));
-      const salesCards = rows.slice(0, 60).map((s, i) => `
+      const salesCards = rows.slice(0, 60).map((s, i) => {
+        const avgSku = (s.dealers || []).length
+          ? Math.round((s.dealers.reduce((a, d) => a + (Number(d.sku) || 0), 0) / s.dealers.length) * 10) / 10
+          : 0;
+        return `
         <button type="button" data-sales="${esc(s.sales)}" class="m-sales-item" style="display:block;width:100%;text-align:left;border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:8px;background:#fff;cursor:pointer">
           <div style="display:flex;justify-content:space-between;gap:8px;font-weight:900;font-size:.82rem">
             <span>${i + 1}. ${esc(s.sales)}</span>
             <span style="color:#1d4ed8">${fmtIDR(s.totalAmt)}</span>
           </div>
           <div style="font-size:.68rem;color:#64748b;font-weight:700;margin-top:4px">
-            SAM ${fmtIDR(s.totals?.SAMSUNG || 0)} · Dealer ${fmtN((s.dealers || []).length)} · Belum QVO ${fmtN(s.belumQvoSam)}
+            SAM ${fmtIDR(s.totals?.SAMSUNG || 0)} · Dealer ${fmtN((s.dealers || []).length)} · Belum QVO ${fmtN(s.belumQvoSam)} · SKU≈${avgSku}
           </div>
-        </button>
-      `).join('') || '<div style="color:#64748b;font-weight:700">Tidak ada sales untuk filter/pencarian ini</div>';
+        </button>`;
+      }).join('') || '<div style="color:#64748b;font-weight:700">Tidak ada sales untuk filter/pencarian ini</div>';
 
       app.innerHTML = banner() + salesFilterHtml() + card('SALES (HP)', `
         <p style="font-size:.72rem;color:#64748b;font-weight:700;margin-bottom:8px">With Tax · ${esc(filterHint || filterSummaryText())} · ${fmtN(list.length)} sales</p>
@@ -2072,7 +2166,7 @@
 
     const banner = () => `
       <div style="background:#ecfdf5;border:2px solid #6ee7b7;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-weight:900;color:#065f46;font-size:.78rem">
-        MODE HP v5 · Filter Sales aktif · Geser menu bawah
+        MODE HP v6 · Filter SKU Sales · Geser menu bawah
       </div>`;
     const foot = () => `
       <p style="text-align:center;color:#94a3b8;font-size:.68rem;font-weight:700;padding:8px 0 20px">
@@ -2123,7 +2217,7 @@
       filteredPack = null;
       filteredPackKey = '';
       document.getElementById('subHead').textContent =
-        `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · HP v5`;
+        `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · HP v6`;
       setBootProgress(99, 'Merender menu…');
       await new Promise(r => setTimeout(r, 20));
 
