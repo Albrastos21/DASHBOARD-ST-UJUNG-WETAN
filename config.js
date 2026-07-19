@@ -1,18 +1,20 @@
 /**
- * Konfigurasi sumber data dashboard
+ * Sumber data dashboard
  *
  * LOKAL (start.bat):
  *   dataUrl: 'data.json'
  *
- * GITHUB (publik):
- *   1. Upload data.json ke Releases (tag v1)
- *   2. Isi URL di bawah, contoh:
- *      dataUrl: 'https://github.com/USERNAME/dashboard-st-2026/releases/download/v1/data.json'
- *   3. Commit & push config.js, lalu buka GitHub Pages
+ * GITHUB PAGES (disarankan — hindari CORS):
+ *   1. Upload data.json.gz ke root repo (bukan Releases)
+ *   2. dataUrl: 'data.json.gz'
+ *   Jangan pakai URL .../releases/download/... — browser diblokir CORS.
  *
- * CLOUDFLARE R2:
- *   dataUrl: 'https://pub-xxxx.r2.dev/data.json'
+ * Buat ulang .gz setelah update data:
+ *   python compress-data.py
  */
 window.DASHBOARD_CONFIG = {
-  dataUrl: 'https://github.com/Albrastos21/DASHBOARD-ST-UJUNG-WETAN/releases/download/V1/data.json',
+  // Lokal default:
+  dataUrl: 'data.json',
+  // Setelah deploy GitHub Pages, GANTI menjadi:
+  // dataUrl: 'data.json.gz',
 };

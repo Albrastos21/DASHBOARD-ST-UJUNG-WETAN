@@ -1460,12 +1460,30 @@
     formatter: (v) => fmtShort(v)
   };
 
+  /** Muat JSON biasa atau .gz (untuk GitHub Pages — hindari CORS Releases) */
+  async function loadDashboardData(url) {
+    const res = await fetch(url, { cache: 'no-store', mode: 'cors' });
+    if (!res.ok) {
+      throw new Error('HTTP ' + res.status + ' · ' + url);
+    }
+    const looksGz = /\.gz(\?|$)/i.test(url)
+      || (res.headers.get('content-encoding') || '').toLowerCase().includes('gzip')
+      || (res.headers.get('content-type') || '').toLowerCase().includes('gzip');
+    if (looksGz) {
+      if (typeof DecompressionStream === 'undefined') {
+        throw new Error('Browser tidak mendukung gzip. Pakai Chrome / Edge terbaru.');
+      }
+      const stream = res.body.pipeThrough(new DecompressionStream('gzip'));
+      const text = await new Response(stream).text();
+      return JSON.parse(text);
+    }
+    return res.json();
+  }
+
   async function boot() {
     const dataUrl = (window.DASHBOARD_CONFIG && window.DASHBOARD_CONFIG.dataUrl) || 'data.json';
     try {
-      const res = await fetch(dataUrl, { cache: 'no-store' });
-      if (!res.ok) throw new Error('Data tidak ditemukan (' + res.status + '): ' + dataUrl);
-      DATA = await res.json();
+      DATA = await loadDashboardData(dataUrl);
       filteredPack = null;
       filteredPackKey = '';
       document.getElementById('subHead').textContent =
@@ -1474,12 +1492,19 @@
       document.getElementById('bottomNav').hidden = false;
       apply();
     } catch (e) {
+      const msg = String(e && e.message ? e.message : e);
+      const isCors = /failed to fetch|networkerror|cors|load failed/i.test(msg);
       document.getElementById('app').innerHTML = `<div class="section" style="margin-top:20px;text-align:center">
         <h3 style="color:var(--tam)">Gagal memuat data</h3>
-        <p class="empty">${esc(e.message)}</p>
-        <p style="color:var(--muted);font-size:.85rem;margin-top:8px">
-          Lokal: jalankan start.bat → http://127.0.0.1:8765<br>
-          Cloudflare: cek config.js (dataUrl R2) + CORS bucket R2 · lihat CARA-CLOUDFLARE.txt
+        <p class="empty">${esc(msg)}</p>
+        <p class="empty" style="margin-top:8px;font-size:.8rem">Sumber: ${esc(dataUrl)}</p>
+        <p style="color:var(--muted);font-size:.85rem;margin-top:10px;text-align:left;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.45">
+          ${isCors
+            ? '<strong>Penyebab umum GitHub:</strong> URL Releases tidak bisa di-fetch dari Pages (diblokir CORS).<br><strong>Solusi:</strong> pakai <code>data.json.gz</code> di repo (bukan Releases). Lihat CARA-GITHUB.txt bagian PERBAIKI GAGAL LOAD.'
+            : '<strong>Cek:</strong> URL data bisa dibuka di browser? config.js sudah benar? File sudah di-commit ke branch Pages?'}
+          <br><br>
+          Lokal: start.bat → http://127.0.0.1:8765 · dataUrl: data.json<br>
+          GitHub: dataUrl: 'data.json.gz' (file di root repo, ~15 MB)
         </p>
       </div>`;
     }
