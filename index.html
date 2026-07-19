@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5" />
   <meta name="theme-color" content="#0B2F6B" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <title>DASHBOARD UJUNG WETAN · REBORN</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <title>DASHBOARD UJUNG WETAN · HP v3</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- Default data URL (GitHub Pages). Opsional: config.js di root bisa menimpa ini. -->
@@ -1589,6 +1591,147 @@
     return 'data.json.gz';
   }
 
+  /** Mode HP: tampilan sederhana inline-style (tidak mengandalkan CSS .page yang sering blank di Safari) */
+  function renderMobileApp() {
+    const grain = DATA.grain || [];
+    const brands = Object.fromEntries(BRANDS.map(b => [b, { amt: 0, qty: 0 }]));
+    let totalAmt = 0, totalQty = 0;
+    for (let i = 0; i < grain.length; i++) {
+      const r = grain[i];
+      if (!r || !brands[r.brand]) continue;
+      if (r.depo === 'Unknown') continue;
+      const a = Number(r.amt) || 0;
+      const q = Number(r.qty) || 0;
+      brands[r.brand].amt += a;
+      brands[r.brand].qty += q;
+      totalAmt += a;
+      totalQty += q;
+    }
+    const ranked = BRANDS.slice().sort((a, b) => brands[b].amt - brands[a].amt);
+    const sam = brands.SAMSUNG;
+
+    // depo top (ringkas dari grain)
+    const depoMap = new Map();
+    for (let i = 0; i < grain.length; i++) {
+      const r = grain[i];
+      if (!r || r.depo === 'Unknown') continue;
+      if (r.brand !== 'SAMSUNG') continue;
+      depoMap.set(r.depo, (depoMap.get(r.depo) || 0) + (Number(r.amt) || 0));
+    }
+    const topDepo = [...depoMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+    const card = (title, body) =>
+      `<div style="background:#fff;border:1px solid #c5d4e8;border-radius:14px;padding:14px;margin:0 0 12px;box-shadow:0 4px 14px rgba(11,47,107,.08)">
+        <div style="font-size:.72rem;font-weight:900;color:#0B2F6B;margin-bottom:8px">${title}</div>
+        ${body}
+      </div>`;
+
+    const brandCards = ranked.map((b, i) => {
+      const sh = totalAmt ? brands[b].amt / totalAmt : 0;
+      const col = COLORS[b] || '#64748b';
+      return `<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px;margin-bottom:8px;border-left:5px solid ${col}">
+        <div style="display:flex;justify-content:space-between;gap:8px;font-weight:900">
+          <span>#${i + 1} ${b}</span>
+          <span style="color:${col}">${fmtPct(sh)}</span>
+        </div>
+        <div style="font-size:.9rem;font-weight:900;margin-top:4px;color:#0b1f3a">${fmtIDR(brands[b].amt)}</div>
+        <div style="font-size:.72rem;color:#5b6b82;font-weight:700">Qty ${fmtN(brands[b].qty)}</div>
+        <div style="height:8px;background:#e2eaf5;border-radius:99px;margin-top:8px;overflow:hidden">
+          <i style="display:block;height:100%;width:${(sh * 100).toFixed(1)}%;background:${col}"></i>
+        </div>
+      </div>`;
+    }).join('');
+
+    const depoRows = topDepo.map(([d, v], i) =>
+      `<div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #eef2f7;font-weight:800;font-size:.8rem">
+        <span>${i + 1}. ${esc(d)}</span><span style="color:#1d4ed8">${fmtIDR(v)}</span>
+      </div>`
+    ).join('') || '<div style="color:#64748b;font-weight:700">Tidak ada data DEPO</div>';
+
+    const panels = {
+      overview: card('RINGKASAN', `
+        <div style="background:linear-gradient(135deg,#0B2F6B,#00A3E0);color:#fff;border-radius:12px;padding:14px;margin-bottom:10px">
+          <div style="font-size:.7rem;opacity:.9;font-weight:800">NILAI SAMSUNG</div>
+          <div style="font-size:1.35rem;font-weight:900;margin-top:4px">${fmtIDR(sam.amt)}</div>
+          <div style="font-size:.75rem;margin-top:6px;font-weight:700">Qty ${fmtN(sam.qty)} · Rank #${ranked.indexOf('SAMSUNG') + 1}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div style="background:#f8fafc;border-radius:10px;padding:10px;text-align:center">
+            <div style="font-size:.65rem;color:#64748b;font-weight:800">TOTAL 4 BRAND</div>
+            <div style="font-weight:900;color:#0B2F6B;margin-top:4px;font-size:.85rem">${fmtIDR(totalAmt)}</div>
+          </div>
+          <div style="background:#f8fafc;border-radius:10px;padding:10px;text-align:center">
+            <div style="font-size:.65rem;color:#64748b;font-weight:800">TOTAL QTY</div>
+            <div style="font-weight:900;color:#0B2F6B;margin-top:4px;font-size:.85rem">${fmtN(totalQty)}</div>
+          </div>
+        </div>
+        <p style="margin-top:10px;font-size:.72rem;color:#64748b;font-weight:700;line-height:1.4">
+          Update data: ${esc(DATA.generated || '-')} · Mode HP ringan (v3)
+        </p>
+      `) + card('SHARE 4 BRAND', brandCards),
+
+      brands: card('TABEL BRAND', brandCards),
+
+      depo: card('TOP DEPO SAMSUNG', depoRows),
+
+      sales: card('SALES', `
+        <p style="font-weight:700;font-size:.82rem;line-height:1.45;color:#334155">
+          Menu Sales lengkap (daftar outlet, QVO, chart) lebih berat di HP.
+          Gunakan <strong>laptop/PC</strong> untuk detail penuh, atau buka lewat Wi‑Fi + Chrome.
+        </p>
+      `),
+
+      kalkulator: card('KALKULATOR', `
+        <p style="font-weight:700;font-size:.82rem;line-height:1.45;color:#334155">
+          Kalkulator margin tersedia penuh di tampilan desktop.
+          Buka dashboard di laptop untuk hitung cashback / trade-in / rebate.
+        </p>
+      `),
+
+      'review-dealer': card('REVIEW DEALER', `
+        <p style="font-weight:700;font-size:.82rem;line-height:1.45;color:#334155">
+          Klasifikasi dealer & chart butuh memori besar.
+          Gunakan <strong>PC/laptop</strong> untuk Review Dealer penuh.
+        </p>
+      `),
+
+      'review-sales': card('REVIEW SALES', `
+        <p style="font-weight:700;font-size:.82rem;line-height:1.45;color:#334155">
+          Review Sales & grafik bulanan optimal di desktop.
+        </p>
+      `),
+    };
+
+    const paint = (key) => {
+      page = key;
+      const app = document.getElementById('app');
+      if (!app) return;
+      app.innerHTML = `
+        <div style="background:#ecfdf5;border:2px solid #6ee7b7;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-weight:900;color:#065f46;font-size:.78rem">
+          MODE HP v3 · Konten aktif · Geser menu bawah
+        </div>
+        ${panels[key] || panels.overview}
+        <p style="text-align:center;color:#94a3b8;font-size:.68rem;font-weight:700;padding:8px 0 20px">
+          PT TELETAMA ARTHA MANDIRI · ${esc(DATA.generated || '')}
+        </p>
+      `;
+      document.querySelectorAll('.nav-btn').forEach(b => {
+        b.classList.toggle('on', b.dataset.page === key);
+      });
+      try { window.scrollTo(0, 0); } catch (_) {}
+    };
+
+    document.getElementById('bottomNav').hidden = false;
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.onclick = () => paint(btn.dataset.page || 'overview');
+    });
+    // Sembunyikan tombol present yang sering mengganggu di HP
+    const bp = document.getElementById('btnPresent');
+    if (bp) bp.style.display = 'none';
+
+    paint('overview');
+  }
+
   async function boot() {
     const dataUrl = resolveDataUrl();
     try {
@@ -1597,14 +1740,19 @@
       filteredPack = null;
       filteredPackKey = '';
       document.getElementById('subHead').textContent =
-        `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · Nett No Tax`;
+        `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · HP v3`;
       setBootProgress(99, 'Merender menu…');
       await new Promise(r => setTimeout(r, 20));
-      buildUI();
-      document.getElementById('bottomNav').hidden = false;
-      // Di HP: render page aktif saja (apply sudah lazy); sedikit delay agar UI tidak blank
-      await new Promise(r => setTimeout(r, 10));
-      apply();
+
+      // HP: shell ringan (hindari blank putih Safari). Desktop: UI penuh.
+      if (isMobileDevice()) {
+        renderMobileApp();
+      } else {
+        buildUI();
+        document.getElementById('bottomNav').hidden = false;
+        await new Promise(r => setTimeout(r, 10));
+        apply();
+      }
       setBootProgress(100, 'Siap');
     } catch (e) {
       const msg = String(e && e.message ? e.message : e);
