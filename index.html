@@ -7,16 +7,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>DASHBOARD UJUNG WETAN · HP v8</title>
+  <title>DASHBOARD UJUNG WETAN · HP v9</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- Default data URL (GitHub Pages). Opsional: config.js di root bisa menimpa ini. -->
   <script>
     window.DASHBOARD_CONFIG = window.DASHBOARD_CONFIG || { dataUrl: 'data.json.gz' };
     // Versi UI — ganti angka ini setiap rilis agar cache browser/HP ikut refresh
-    window.DASHBOARD_UI_VERSION = '8';
+    window.DASHBOARD_UI_VERSION = '9';
   </script>
-  <script src="config.js?v=8" onerror="/* config.js opsional — 404 diabaikan */"></script>
+  <script src="config.js?v=9" onerror="/* config.js opsional — 404 diabaikan */"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <style>
@@ -1876,6 +1876,21 @@
       </div>`;
     }).join('');
 
+    // DEPO + QVO (ringkas HP) — hitung dari dealer_grain Samsung
+    const depoStat = new Map(); // depo -> { amt, bo:Set, dealerAmt:Map }
+    for (let i = 0; i < grain.length; i++) {
+      const r = grain[i];
+      if (!r || r.brand !== 'SAMSUNG' || r.depo === 'Unknown') continue;
+      if (!depoStat.has(r.depo)) depoStat.set(r.depo, { amt: 0, bo: new Set(), dealerAmt: new Map() });
+      const o = depoStat.get(r.depo);
+      o.amt += Number(r.amt) || 0;
+      // grain baris = sales level; BO/QVO akurat dari dealer_grain di paintDepoMobile
+    }
+    for (const [d, v] of topDepo) {
+      if (!depoStat.has(d)) depoStat.set(d, { amt: v, bo: new Set(), dealerAmt: new Map() });
+      else depoStat.get(d).amt = v;
+    }
+
     const depoRows = topDepo.map(([d, v], i) =>
       `<div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #eef2f7;font-weight:800;font-size:.8rem">
         <span>${i + 1}. ${esc(d)}</span><span style="color:#1d4ed8">${fmtIDR(v)}</span>
@@ -2403,7 +2418,7 @@
 
     const banner = () => `
       <div style="background:#ecfdf5;border:2px solid #6ee7b7;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-weight:900;color:#065f46;font-size:.78rem">
-        MODE HP v8 · Rincian type SKU otomatis · Rincian kalkulator · Geser menu bawah
+        MODE HP v9 · DEPO QVO + weekly · Rincian SKU/kalkulator · Geser menu bawah
       </div>`;
     const foot = () => `
       <p style="text-align:center;color:#94a3b8;font-size:.68rem;font-weight:700;padding:8px 0 20px">
@@ -2423,6 +2438,33 @@
       }
       if (key === 'kalkulator') {
         paintCalcMobile();
+        return;
+      }
+      if (key === 'depo') {
+        // DEPO penuh (QVO + grafik weekly per DEPO) — sama logika desktop
+        const app = document.getElementById('app');
+        if (!app) return;
+        app.innerHTML = banner() + `
+          <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:8px 10px;margin-bottom:10px;font-size:.72rem;font-weight:800;color:#1e3a8a">
+            DEPO HP: rincian QVO per depo + grafik weekly (Revenue / BO / QVO) · garis per DEPO
+          </div>
+          <div id="page-depo"></div>
+        ` + foot();
+        try {
+          const rows = filteredGrain();
+          const dealers = filteredDealer();
+          renderDepo(rows, dealers);
+        } catch (err) {
+          console.warn(err);
+          const host = document.getElementById('page-depo');
+          if (host) {
+            host.innerHTML = card('DEPO', `
+              <p style="font-weight:700;color:#b91c1c">Gagal memuat grafik DEPO di HP.</p>
+              <p style="font-size:.75rem;color:#64748b;font-weight:700;margin-top:6px">${esc(String(err && err.message ? err.message : err))}</p>
+              ${depoRows}
+            `);
+          }
+        }
         return;
       }
 
@@ -2453,7 +2495,7 @@
       DATA = await loadDashboardData(dataUrl);
       filteredPack = null;
       filteredPackKey = '';
-      const uiVer = window.DASHBOARD_UI_VERSION || '8';
+      const uiVer = window.DASHBOARD_UI_VERSION || '9';
       document.getElementById('subHead').textContent =
         `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · UI v${uiVer}${isMobileDevice() ? ' · HP' : ''}`;
       setBootProgress(99, 'Merender menu…');
@@ -3235,28 +3277,61 @@
     });
   }
 
+  const weekKey = (w) => {
+    const m = String(w || '').match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 999;
+  };
+
+  /** Warna garis per DEPO (konsisten di semua grafik weekly) */
+  const DEPO_LINE_COLORS = {
+    Surabaya: '#1d4ed8',
+    Malang: '#0d9488',
+    Jember: '#ea580c',
+    Banyuwangi: '#7c3aed',
+    Pamekasan: '#db2777',
+  };
+  const DEPO_LINE_PALETTE = ['#1d4ed8', '#0d9488', '#ea580c', '#7c3aed', '#db2777', '#0891b2', '#ca8a04', '#64748b'];
+  function depoLineColor(depo, idx = 0) {
+    return DEPO_LINE_COLORS[depo] || DEPO_LINE_PALETTE[idx % DEPO_LINE_PALETTE.length];
+  }
+
   function renderDepo(rows, dealers) {
     const el = document.getElementById('page-depo');
+    if (!el) return;
     const focusBrand = focusBrandOf();
-    const focus = rows.filter(r => r.brand===focusBrand);
-    const byDepo = new Map();
+    const focus = rows.filter(r => r.brand === focusBrand);
+    const byDepo = new Map(); // depo -> {qty, amt, bo:Set, dealerAmt:Map}
     const allDepo = new Map();
     for (const r of rows) {
       if (!allDepo.has(r.depo)) allDepo.set(r.depo, 0);
-      allDepo.set(r.depo, allDepo.get(r.depo)+r.amt);
+      allDepo.set(r.depo, allDepo.get(r.depo) + r.amt);
     }
     for (const r of focus) {
-      if (!byDepo.has(r.depo)) byDepo.set(r.depo, {qty:0,amt:0,bo:new Set()});
-      const o = byDepo.get(r.depo); o.qty+=r.qty; o.amt+=r.amt;
+      if (!byDepo.has(r.depo)) byDepo.set(r.depo, { qty: 0, amt: 0, bo: new Set(), dealerAmt: new Map() });
+      const o = byDepo.get(r.depo);
+      o.qty += r.qty;
+      o.amt += r.amt;
     }
-    for (const r of (dealers||[])) {
-      if ((r.brand||'SAMSUNG') !== focusBrand) continue;
-      if (!byDepo.has(r.depo)) byDepo.set(r.depo, {qty:0,amt:0,bo:new Set()});
+    for (const r of (dealers || [])) {
+      if ((r.brand || 'SAMSUNG') !== focusBrand) continue;
+      if (!byDepo.has(r.depo)) byDepo.set(r.depo, { qty: 0, amt: 0, bo: new Set(), dealerAmt: new Map() });
+      const o = byDepo.get(r.depo);
       const name = r.dealer || r.soldto;
-      if (name) byDepo.get(r.depo).bo.add(name);
+      if (!name) continue;
+      o.bo.add(name);
+      o.dealerAmt.set(name, (o.dealerAmt.get(name) || 0) + (Number(r.amt) || 0));
     }
-    const list = [...byDepo.entries()].sort((a,b)=>b[1].amt-a[1].amt);
-    const tot = list.reduce((s,[,v])=>s+v.amt,0);
+    // QVO per DEPO = dealer dgn total Nett No Tax (filter aktif) > threshold
+    for (const [, v] of byDepo) {
+      let qvoN = 0;
+      for (const amt of v.dealerAmt.values()) {
+        if ((Number(amt) || 0) > QVO_THRESHOLD) qvoN += 1;
+      }
+      v.qvo = qvoN;
+    }
+    const list = [...byDepo.entries()].sort((a, b) => b[1].amt - a[1].amt);
+    const tot = list.reduce((s, [, v]) => s + v.amt, 0);
+    const totalQvoDepo = list.reduce((s, [, v]) => s + (v.qvo || 0), 0);
 
     // Achievement BO / QVO per bulan · garis dipisah per tahun
     // QVO = dealer dgn value Nett No Tax > 18.081.081
@@ -3270,7 +3345,7 @@
     );
     const boMonthLabels = monthLabels.length
       ? monthLabels
-      : [...new Set(focusDealers.map(r => r.month).filter(Boolean))].sort((a,b)=>monthKey(a)-monthKey(b));
+      : [...new Set(focusDealers.map(r => r.month).filter(Boolean))].sort((a, b) => monthKey(a) - monthKey(b));
 
     // year -> month -> Set(dealer)  |  year -> month -> Map(dealer, amt)
     const boByYearMonth = new Map();
@@ -3315,14 +3390,66 @@
     const allBoVals = yearsUse.flatMap(y => seriesBoByYear[y] || []);
     const allQvoVals = yearsUse.flatMap(y => seriesQvoByYear[y] || []);
 
+    // —— Weekly series · garis per DEPO ——
+    // week -> depo -> { rev, bo:Set, dealerAmt:Map }
+    const weekDepoMap = new Map();
+    const depoSetWeek = new Set();
+    for (const r of focusDealers) {
+      const w = r.week || '';
+      const dep = r.depo || 'Unknown';
+      if (!w || dep === 'Unknown') continue;
+      const name = r.dealer || r.soldto;
+      if (!weekDepoMap.has(w)) weekDepoMap.set(w, new Map());
+      const byD = weekDepoMap.get(w);
+      if (!byD.has(dep)) byD.set(dep, { rev: 0, bo: new Set(), dealerAmt: new Map() });
+      const o = byD.get(dep);
+      o.rev += Number(r.amt) || 0;
+      if (name) {
+        o.bo.add(name);
+        o.dealerAmt.set(name, (o.dealerAmt.get(name) || 0) + (Number(r.amt) || 0));
+      }
+      depoSetWeek.add(dep);
+    }
+    const weekLabels = [...weekDepoMap.keys()].sort((a, b) => weekKey(a) - weekKey(b));
+    // urutan DEPO: ikut ranking revenue total (sama list), fallback alpha
+    const depoOrderWeek = list.map(([d]) => d).filter(d => depoSetWeek.has(d));
+    for (const d of [...depoSetWeek].sort((a, b) => a.localeCompare(b, 'id'))) {
+      if (!depoOrderWeek.includes(d)) depoOrderWeek.push(d);
+    }
+
+    const seriesRevWeekByDepo = {};
+    const seriesBoWeekByDepo = {};
+    const seriesQvoWeekByDepo = {};
+    for (const dep of depoOrderWeek) {
+      seriesRevWeekByDepo[dep] = weekLabels.map(w => {
+        const o = weekDepoMap.get(w)?.get(dep);
+        return o ? (o.rev / 1e9) : 0; // Rp Miliar
+      });
+      seriesBoWeekByDepo[dep] = weekLabels.map(w => {
+        const o = weekDepoMap.get(w)?.get(dep);
+        return o ? o.bo.size : 0;
+      });
+      seriesQvoWeekByDepo[dep] = weekLabels.map(w => {
+        const o = weekDepoMap.get(w)?.get(dep);
+        if (!o) return 0;
+        let n = 0;
+        for (const amt of o.dealerAmt.values()) if ((Number(amt) || 0) > QVO_THRESHOLD) n += 1;
+        return n;
+      });
+    }
+
     const yearHint = isAll(state.year) ? 'Semua tahun (garis per tahun)' : fmtMulti(state.year, '', 4);
     const depoHint = !isAll(state.depo) ? ' · DEPO ' + fmtMulti(state.depo, '', 2) : '';
+    const weekYearHint = isAll(state.year) ? 'Semua tahun digabung per minggu' : ('Tahun ' + fmtMulti(state.year, '', 4));
 
     el.innerHTML = `
       <section class="section">
         <div class="section-head">
-          <div><h3>${esc(focusBrand)} per DEPO</h3><p>Urutan terkuat → terlemah · BO = Achievement BO · ${esc(yearHint)}</p></div>
-          <span class="badge-soft">${list.length} DEPO</span>
+          <div>
+            <h3>${esc(focusBrand)} per DEPO</h3>
+            <p>Urutan terkuat → terlemah · BO &amp; QVO di rincian · QVO = Nett No Tax &gt; ${fmtN(QVO_THRESHOLD)} · ${esc(yearHint)}</p>
+          </div>
+          <span class="badge-soft">${list.length} DEPO · QVO ${fmtN(totalQvoDepo)}</span>
         </div>
         <div class="chart-box sm"><canvas id="cDepo"></canvas></div>
         <div class="depo-list" style="margin-top:12px" id="depoCards"></div>
@@ -3339,7 +3466,7 @@
         <div class="hero-stats solid cols-4" style="margin-top:12px">
           <div class="hero-stat" style="background:#0B2F6B"><div class="l">Tahun di grafik</div><div class="v">${fmtN(yearsUse.length)}</div></div>
           <div class="hero-stat" style="background:#1d4ed8"><div class="l">BO puncak</div><div class="v">${fmtN(Math.max(0, ...allBoVals, 0))}</div></div>
-          <div class="hero-stat" style="background:#0d9488"><div class="l">Rata-rata BO/titik</div><div class="v">${fmtN(allBoVals.length ? Math.round(allBoVals.reduce((a,b)=>a+b,0)/allBoVals.length) : 0)}</div></div>
+          <div class="hero-stat" style="background:#0d9488"><div class="l">Rata-rata BO/titik</div><div class="v">${fmtN(allBoVals.length ? Math.round(allBoVals.reduce((a, b) => a + b, 0) / allBoVals.length) : 0)}</div></div>
           <div class="hero-stat" style="background:#7c3aed"><div class="l">EVERBILL</div><div class="v">${fmtN(everbillSet.size)}</div></div>
         </div>
       </section>
@@ -3355,25 +3482,66 @@
         <div class="hero-stats solid cols-4" style="margin-top:12px">
           <div class="hero-stat" style="background:#0B2F6B"><div class="l">Tahun di grafik</div><div class="v">${fmtN(yearsUse.length)}</div></div>
           <div class="hero-stat" style="background:#7c3aed"><div class="l">QVO puncak</div><div class="v">${fmtN(Math.max(0, ...allQvoVals, 0))}</div></div>
-          <div class="hero-stat" style="background:#0d9488"><div class="l">Rata-rata QVO/titik</div><div class="v">${fmtN(allQvoVals.length ? Math.round(allQvoVals.reduce((a,b)=>a+b,0)/allQvoVals.length) : 0)}</div></div>
+          <div class="hero-stat" style="background:#0d9488"><div class="l">Rata-rata QVO/titik</div><div class="v">${fmtN(allQvoVals.length ? Math.round(allQvoVals.reduce((a, b) => a + b, 0) / allQvoVals.length) : 0)}</div></div>
           <div class="hero-stat" style="background:#b45309"><div class="l">EVERBILL QVO</div><div class="v">${fmtN(qvoEverSet.size)}</div></div>
+        </div>
+      </section>
+
+      <section class="section" style="border:2px solid #b7d4ef">
+        <div class="section-head">
+          <div>
+            <h3>Weekly · Achievement Revenue · ${esc(focusBrand)}</h3>
+            <p>Nilai Nett No Tax per minggu · <strong>garis per DEPO</strong> · ${esc(weekYearHint)}${esc(depoHint)}</p>
+          </div>
+          <span class="badge-soft">${fmtN(weekLabels.length)} minggu</span>
+        </div>
+        <div class="chart-box"><canvas id="cDepoRevWeek"></canvas></div>
+      </section>
+      <section class="section" style="border:2px solid #b7d4ef">
+        <div class="section-head">
+          <div>
+            <h3>Weekly · Achievement BO · ${esc(focusBrand)}</h3>
+            <p>Jumlah dealer bertransaksi per minggu · <strong>garis per DEPO</strong> · ${esc(weekYearHint)}${esc(depoHint)}</p>
+          </div>
+          <span class="badge-soft">${fmtN(depoOrderWeek.length)} DEPO</span>
+        </div>
+        <div class="chart-box"><canvas id="cDepoBoWeek"></canvas></div>
+      </section>
+      <section class="section" style="border:2px solid #b7d4ef">
+        <div class="section-head">
+          <div>
+            <h3>Weekly · Achievement QVO · ${esc(focusBrand)}</h3>
+            <p>Dealer QVO per minggu · Nett No Tax &gt; ${fmtN(QVO_THRESHOLD)} · <strong>garis per DEPO</strong> · ${esc(weekYearHint)}${esc(depoHint)}</p>
+          </div>
+          <span class="badge-soft">Weekly QVO</span>
+        </div>
+        <div class="chart-box"><canvas id="cDepoQvoWeek"></canvas></div>
+        <div class="legend-sam-zero" style="margin-top:10px">
+          Warna garis: ${depoOrderWeek.map((d, i) => `<span style="color:${depoLineColor(d, i)};font-weight:900">${esc(d)}</span>`).join(' · ') || '—'}
         </div>
       </section>
     `;
 
-    document.getElementById('depoCards').innerHTML = list.map(([d,v], idx) => {
-      const share = tot ? v.amt/tot : 0;
-      const vs4 = allDepo.get(d) ? v.amt/allDepo.get(d) : 0;
-      const boN = v.bo instanceof Set ? v.bo.size : (v.bo||0);
+    document.getElementById('depoCards').innerHTML = list.map(([d, v], idx) => {
+      const share = tot ? v.amt / tot : 0;
+      const vs4 = allDepo.get(d) ? v.amt / allDepo.get(d) : 0;
+      const boN = v.bo instanceof Set ? v.bo.size : (v.bo || 0);
+      const qvoN = Number(v.qvo) || 0;
+      const qvoPct = boN ? qvoN / boN : 0;
       return `<div class="depo-card">
-        <div class="row1"><div class="name">#${idx+1} ${esc(d)}</div><div class="amt">${fmtIDR(v.amt)}</div></div>
-        <div class="row2">
+        <div class="row1"><div class="name">#${idx + 1} ${esc(d)}</div><div class="amt">${fmtIDR(v.amt)}</div></div>
+        <div class="row2" style="grid-template-columns:repeat(3,1fr)">
           <div class="mini"><div class="l">Qty</div><div class="v">${fmtN(v.qty)}</div></div>
           <div class="mini"><div class="l">BO</div><div class="v">${fmtN(boN)}</div></div>
+          <div class="mini"><div class="l">QVO</div><div class="v" style="color:#7c3aed">${fmtN(qvoN)}</div></div>
+          <div class="mini"><div class="l">QVO / BO</div><div class="v" style="color:#6d28d9">${fmtPct(qvoPct)}</div></div>
           <div class="mini"><div class="l">Share</div><div class="v">${fmtPct(share)}</div></div>
           <div class="mini"><div class="l">vs 4 brand</div><div class="v">${fmtPct(vs4)}</div></div>
         </div>
-        <div class="track"><i style="width:${(share*100).toFixed(1)}%"></i></div>
+        <div style="margin-top:8px;font-size:.72rem;font-weight:800;color:#5b21b6;background:#f5f3ff;border-radius:8px;padding:6px 8px">
+          QVO ${fmtN(qvoN)} dealer · dari ${fmtN(boN)} BO · threshold &gt; ${fmtIDR(QVO_THRESHOLD)}
+        </div>
+        <div class="track"><i style="width:${(share * 100).toFixed(1)}%"></i></div>
       </div>`;
     }).join('') || `<div class="empty">Tidak ada data</div>`;
 
@@ -3385,8 +3553,8 @@
           labels: list.map(([d]) => d),
           datasets: [{
             label: 'Nilai (Rp M)',
-            data: list.map(([,v]) => v.amt/1e9),
-            backgroundColor: list.map((_,i) => ['#1d4ed8','#00A3E0','#0d9488','#d97706','#7c3aed'][i%5]),
+            data: list.map(([, v]) => v.amt / 1e9),
+            backgroundColor: list.map(([d], i) => depoLineColor(d, i)),
             borderRadius: 10
           }]
         },
@@ -3395,19 +3563,19 @@
           responsive: true, maintainAspectRatio: false,
           layout: { padding: { top: 16, right: 12 } },
           plugins: {
-            legend: { display:false },
+            legend: { display: false },
             datalabels: {
-              anchor: window.innerWidth < 600 ? 'end' : 'end',
+              anchor: 'end',
               align: window.innerWidth < 600 ? 'right' : 'top',
               color: '#0b1f3a',
               font: { weight: '900', size: 11 },
               formatter: (v) => v.toFixed(1) + ' M'
             },
-            tooltip: { callbacks: { label: c => ' ' + fmtIDR((c.raw||0)*1e9) } }
+            tooltip: { callbacks: { label: c => ' ' + fmtIDR((c.raw || 0) * 1e9) } }
           },
           scales: {
-            x: { ticks: { color:'#334155', font:{weight:'700'} }, grid: { color:'rgba(148,163,184,.2)' } },
-            y: { ticks: { color:'#334155', font:{ weight:'800'} }, grid: { display:false } }
+            x: { ticks: { color: '#334155', font: { weight: '700' } }, grid: { color: 'rgba(148,163,184,.2)' } },
+            y: { ticks: { color: '#334155', font: { weight: '800' } }, grid: { display: false } }
           }
         }
       });
@@ -3415,12 +3583,12 @@
 
     const yearPalette = { '2025': '#64748b', '2026': '#1d4ed8' };
     const yearPaletteQvo = { '2025': '#a78bfa', '2026': '#7c3aed' };
-    const lineChartOpts = (yTitle, tipPrefix) => ({
+    const lineChartOpts = (yTitle, tipPrefix, xTitle = 'Bulan') => ({
       responsive: true, maintainAspectRatio: false,
       layout: { padding: { top: 18, right: 12, left: 4 } },
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: true, labels: { color:'#334155', boxWidth:12, font:{size:11, weight:'800'} } },
+        legend: { display: true, labels: { color: '#334155', boxWidth: 12, font: { size: 11, weight: '800' } } },
         datalabels: {
           align: 'top',
           anchor: 'end',
@@ -3431,21 +3599,21 @@
         },
         tooltip: {
           callbacks: {
-            label: (c) => ` ${c.dataset.label}: ${tipPrefix} ${fmtN(c.raw||0)} dealer`
+            label: (c) => ` ${c.dataset.label}: ${tipPrefix} ${fmtN(c.raw || 0)} dealer`
           }
         }
       },
       scales: {
         x: {
-          ticks: { color:'#334155', font:{weight:'800'} },
-          grid: { display:false },
-          title: { display:true, text:'Bulan', color:'#5b6b82', font:{weight:'700', size:11} }
+          ticks: { color: '#334155', font: { weight: '800' } },
+          grid: { display: false },
+          title: { display: true, text: xTitle, color: '#5b6b82', font: { weight: '700', size: 11 } }
         },
         y: {
           beginAtZero: true,
-          ticks: { color:'#334155', font:{weight:'700'}, precision:0 },
-          grid: { color:'rgba(148,163,184,.22)' },
-          title: { display:true, text:yTitle, color:'#5b6b82', font:{weight:'700', size:11} }
+          ticks: { color: '#334155', font: { weight: '700' }, precision: 0 },
+          grid: { color: 'rgba(148,163,184,.22)' },
+          title: { display: true, text: yTitle, color: '#5b6b82', font: { weight: '700', size: 11 } }
         }
       }
     });
@@ -3471,6 +3639,59 @@
       };
     });
 
+    const makeDepoDatasets = (seriesMap, { dash = false } = {}) => depoOrderWeek.map((dep, i) => {
+      const col = depoLineColor(dep, i);
+      return {
+        label: dep,
+        data: seriesMap[dep] || weekLabels.map(() => 0),
+        borderColor: col,
+        backgroundColor: col + '22',
+        borderWidth: 2.6,
+        borderDash: dash ? [6, 4] : [],
+        pointRadius: 3,
+        pointHoverRadius: 6,
+        pointStyle: 'circle',
+        pointBackgroundColor: col,
+        pointBorderColor: '#fff',
+        pointBorderWidth: 1.5,
+        fill: false,
+        tension: 0.3,
+      };
+    });
+
+    const weekLineOpts = (yTitle, tipFn) => ({
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 14, right: 10, left: 4 } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: { color: '#334155', boxWidth: 12, font: { size: 11, weight: '800' }, usePointStyle: true }
+        },
+        // multi-DEPO: label angka dimatikan agar tidak berantakan
+        datalabels: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (c) => tipFn(c)
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#334155', font: { weight: '800', size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 16 },
+          grid: { display: false },
+          title: { display: true, text: 'Minggu', color: '#5b6b82', font: { weight: '700', size: 11 } }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#334155', font: { weight: '700' } },
+          grid: { color: 'rgba(148,163,184,.22)' },
+          title: { display: true, text: yTitle, color: '#5b6b82', font: { weight: '700', size: 11 } }
+        }
+      }
+    });
+
     destroyChart('depoBoMonth');
     if (boMonthLabels.length) {
       charts.depoBoMonth = new Chart(document.getElementById('cDepoBoMonth'), {
@@ -3492,6 +3713,43 @@
           datasets: makeYearDatasets(seriesQvoByYear, yearPaletteQvo)
         },
         options: lineChartOpts('Jumlah Dealer QVO', 'QVO')
+      });
+    }
+
+    // Weekly charts · by DEPO
+    destroyChart('depoRevWeek');
+    destroyChart('depoBoWeek');
+    destroyChart('depoQvoWeek');
+    if (weekLabels.length && depoOrderWeek.length) {
+      charts.depoRevWeek = new Chart(document.getElementById('cDepoRevWeek'), {
+        type: 'line',
+        data: {
+          labels: weekLabels,
+          datasets: makeDepoDatasets(seriesRevWeekByDepo)
+        },
+        options: weekLineOpts('Revenue (Rp Miliar)', (c) =>
+          ` ${c.dataset.label}: ${fmtIDR((Number(c.raw) || 0) * 1e9)}`
+        )
+      });
+      charts.depoBoWeek = new Chart(document.getElementById('cDepoBoWeek'), {
+        type: 'line',
+        data: {
+          labels: weekLabels,
+          datasets: makeDepoDatasets(seriesBoWeekByDepo)
+        },
+        options: weekLineOpts('Jumlah Dealer (BO)', (c) =>
+          ` ${c.dataset.label}: BO ${fmtN(c.raw || 0)} dealer`
+        )
+      });
+      charts.depoQvoWeek = new Chart(document.getElementById('cDepoQvoWeek'), {
+        type: 'line',
+        data: {
+          labels: weekLabels,
+          datasets: makeDepoDatasets(seriesQvoWeekByDepo)
+        },
+        options: weekLineOpts('Jumlah Dealer QVO', (c) =>
+          ` ${c.dataset.label}: QVO ${fmtN(c.raw || 0)} dealer`
+        )
       });
     }
   }
