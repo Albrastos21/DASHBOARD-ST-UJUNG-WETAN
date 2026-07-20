@@ -917,6 +917,67 @@
     .rd-vc-insight-list li { margin-bottom: 4px; }
     .rd-vc-insight-list .why { color: #0B2F6B; font-weight: 800; }
     .rd-vc-insight-list .pos, .rd-vc-insight-list strong.pos { color: #047857; }
+
+    /* Weekly DEPO insight naik/turun */
+    .wk-insight {
+      margin-top: 12px; background: linear-gradient(180deg, #f8fafc, #fff);
+      border: 1px solid #dbe7f5; border-radius: 14px; padding: 12px 14px;
+    }
+    .wk-insight.muted { color: #64748b; font-weight: 700; font-size: .8rem; }
+    .wk-insight-head {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px;
+    }
+    .wk-badge {
+      display: inline-block; background: #0B2F6B; color: #fff; border-radius: 999px;
+      padding: 3px 10px; font-size: .68rem; font-weight: 900; letter-spacing: .03em;
+    }
+    .wk-period { font-size: .78rem; font-weight: 800; color: #475569; }
+    .wk-insight-total {
+      border-radius: 12px; padding: 10px 12px; margin-bottom: 10px;
+      border: 1px solid #e2e8f0; background: #f1f5f9;
+    }
+    .wk-insight-total.pos { background: #ecfdf5; border-color: #6ee7b7; }
+    .wk-insight-total.neg { background: #fef2f2; border-color: #fca5a5; }
+    .wk-insight-total.flat { background: #f8fafc; border-color: #e2e8f0; }
+    .wk-insight-total .l { font-size: .68rem; font-weight: 800; color: #64748b; text-transform: uppercase; }
+    .wk-insight-total .v { font-size: 1rem; font-weight: 900; margin-top: 3px; color: #0b1f3a; }
+    .wk-insight-total.pos .v { color: #047857; }
+    .wk-insight-total.neg .v { color: #b91c1c; }
+    .wk-insight-total .v .pct { font-size: .85rem; opacity: .9; }
+    .wk-insight-total .s { font-size: .72rem; font-weight: 700; color: #64748b; margin-top: 4px; }
+    .wk-insight-trend {
+      font-size: .78rem; font-weight: 700; color: #334155; margin-bottom: 10px;
+      padding: 8px 10px; border-radius: 10px; background: #eff6ff; border: 1px solid #bfdbfe; line-height: 1.4;
+    }
+    .wk-insight-trend.pos { background: #ecfdf5; border-color: #a7f3d0; }
+    .wk-insight-trend.neg { background: #fef2f2; border-color: #fecaca; }
+    .wk-insight-grid {
+      display: grid; grid-template-columns: 1fr; gap: 10px;
+    }
+    @media (min-width: 720px) {
+      .wk-insight-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .wk-col-h { font-size: .72rem; font-weight: 900; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .03em; }
+    .wk-col-h.pos { color: #047857; }
+    .wk-col-h.neg { color: #b91c1c; }
+    .wk-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .wk-chip {
+      display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px;
+      border: 1px solid #e2e8f0; background: #fff; border-radius: 999px;
+      padding: 5px 10px; font-size: .7rem; font-weight: 800; color: #334155;
+    }
+    .wk-chip i { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .wk-chip.pos { background: #ecfdf5; border-color: #6ee7b7; color: #065f46; }
+    .wk-chip.neg { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }
+    .wk-chip.flat { background: #f8fafc; color: #64748b; }
+    .wk-chip em { font-style: normal; opacity: .85; font-weight: 700; }
+    .wk-empty { font-size: .72rem; font-weight: 700; color: #94a3b8; }
+    .wk-flat { margin-top: 8px; font-size: .72rem; font-weight: 700; color: #64748b; }
+    .wk-summary { margin: 10px 0 0; padding-left: 18px; font-size: .78rem; font-weight: 700; color: #334155; line-height: 1.45; }
+    .wk-summary li { margin-bottom: 4px; }
+    .wk-summary .pos { color: #047857; }
+    .wk-summary .neg { color: #b91c1c; }
+    .wk-note { margin-top: 8px; font-size: .68rem; font-weight: 700; color: #94a3b8; line-height: 1.4; }
     .rd-vc-insight-list .neg, .rd-vc-insight-list strong.neg { color: #b91c1c; }
     .rd-vc-bars + p .pos, .rd-vc-bar-row .pos { color: #047857; }
     .rd-vc-bars + p .neg, .rd-vc-bar-row .neg { color: #b91c1c; }
@@ -3305,6 +3366,129 @@
     return DEPO_LINE_COLORS[depo] || DEPO_LINE_PALETTE[idx % DEPO_LINE_PALETTE.length];
   }
 
+  /**
+   * Keterangan naik/turun Weekly per DEPO (WoW = minggu terakhir vs minggu sebelumnya).
+   * seriesMap: { depo: number[] } sejajar weekLabels
+   * kind: 'rev' (nilai Rp Miliar) | 'count' (dealer)
+   */
+  function buildWeeklyDepoInsightHtml(seriesMap, weekLabels, depoOrder, kind = 'count', metricLabel = 'Metrik') {
+    if (!weekLabels || weekLabels.length < 2 || !depoOrder || !depoOrder.length) {
+      return `<div class="wk-insight muted">Belum cukup data minggu (minimal 2 minggu) untuk bandingkan naik/turun.</div>`;
+    }
+    const iLast = weekLabels.length - 1;
+    const iPrev = weekLabels.length - 2;
+    const wLast = weekLabels[iLast];
+    const wPrev = weekLabels[iPrev];
+
+    const fmtVal = (v) => {
+      const n = Number(v) || 0;
+      if (kind === 'rev') return fmtIDR(n * 1e9);
+      return fmtN(n) + ' dealer';
+    };
+    const fmtDelta = (d) => {
+      const n = Number(d) || 0;
+      if (kind === 'rev') {
+        const sign = n > 0 ? '+' : (n < 0 ? '−' : '');
+        return sign + fmtIDR(Math.abs(n) * 1e9);
+      }
+      const sign = n > 0 ? '+' : (n < 0 ? '−' : '');
+      return sign + fmtN(Math.abs(n));
+    };
+    const pctTxt = (cur, prev) => {
+      const c = Number(cur) || 0;
+      const p = Number(prev) || 0;
+      if (!p && !c) return '0%';
+      if (!p) return 'baru';
+      const pct = ((c - p) / Math.abs(p)) * 100;
+      const sign = pct > 0 ? '+' : '';
+      return sign + pct.toFixed(1) + '%';
+    };
+    const tone = (d) => (d > 0 ? 'pos' : (d < 0 ? 'neg' : 'flat'));
+    const arrow = (d) => (d > 0 ? '▲ Naik' : (d < 0 ? '▼ Turun' : '● Stabil'));
+
+    // Total semua DEPO per minggu
+    const totalLast = depoOrder.reduce((s, d) => s + (Number(seriesMap[d]?.[iLast]) || 0), 0);
+    const totalPrev = depoOrder.reduce((s, d) => s + (Number(seriesMap[d]?.[iPrev]) || 0), 0);
+    const totalDelta = totalLast - totalPrev;
+
+    // Per DEPO
+    const rows = depoOrder.map((dep, idx) => {
+      const last = Number(seriesMap[dep]?.[iLast]) || 0;
+      const prev = Number(seriesMap[dep]?.[iPrev]) || 0;
+      const delta = last - prev;
+      return { dep, last, prev, delta, idx };
+    }).sort((a, b) => b.delta - a.delta);
+
+    const naik = rows.filter(r => r.delta > 0);
+    const turun = rows.filter(r => r.delta < 0);
+    const stabil = rows.filter(r => r.delta === 0);
+    const best = rows[0] && rows[0].delta > 0 ? rows[0] : null;
+    const worst = rows[rows.length - 1] && rows[rows.length - 1].delta < 0 ? rows[rows.length - 1] : null;
+
+    // Trend N minggu terakhir vs N minggu sebelumnya (jika cukup data)
+    let trendBlock = '';
+    if (weekLabels.length >= 4) {
+      const n = Math.min(4, Math.floor(weekLabels.length / 2));
+      const i0 = weekLabels.length - n;
+      if (i0 >= n) {
+        const sumSlice = (from, to) => depoOrder.reduce((s, d) => {
+          const arr = seriesMap[d] || [];
+          for (let i = from; i < to; i++) s += Number(arr[i]) || 0;
+          return s;
+        }, 0);
+        const avgRecent = sumSlice(i0, weekLabels.length) / n;
+        const avgOlder = sumSlice(i0 - n, i0) / n;
+        const dAvg = avgRecent - avgOlder;
+        trendBlock = `
+          <div class="wk-insight-trend ${tone(dAvg)}">
+            <strong>Tren ${n} minggu terakhir</strong> vs ${n} minggu sebelumnya:
+            rata-rata ${fmtVal(avgRecent)} · ${arrow(dAvg)} ${fmtDelta(dAvg)}
+            (${pctTxt(avgRecent, avgOlder)}) · ${esc(metricLabel)}
+          </div>`;
+      }
+    }
+
+    const chip = (r) => {
+      const t = tone(r.delta);
+      return `<span class="wk-chip ${t}" style="border-color:${depoLineColor(r.dep, r.idx)}33">
+        <i style="background:${depoLineColor(r.dep, r.idx)}"></i>
+        <strong>${esc(r.dep)}</strong>
+        ${arrow(r.delta)} ${fmtDelta(r.delta)}
+        <em>(${pctTxt(r.last, r.prev)})</em>
+      </span>`;
+    };
+
+    return `
+      <div class="wk-insight">
+        <div class="wk-insight-head">
+          <span class="wk-badge">Analisis WoW</span>
+          <span class="wk-period">${esc(wPrev)} → ${esc(wLast)}</span>
+        </div>
+        <div class="wk-insight-total ${tone(totalDelta)}">
+          <div class="l">Total semua DEPO · ${esc(metricLabel)}</div>
+          <div class="v">${arrow(totalDelta)} ${fmtDelta(totalDelta)} <span class="pct">(${pctTxt(totalLast, totalPrev)})</span></div>
+          <div class="s">${esc(wPrev)}: ${fmtVal(totalPrev)} → ${esc(wLast)}: ${fmtVal(totalLast)}</div>
+        </div>
+        ${trendBlock}
+        <div class="wk-insight-grid">
+          <div class="wk-col">
+            <div class="wk-col-h pos">▲ Naik (${fmtN(naik.length)} DEPO)</div>
+            <div class="wk-chips">${naik.length ? naik.map(chip).join('') : '<span class="wk-empty">Tidak ada DEPO naik</span>'}</div>
+          </div>
+          <div class="wk-col">
+            <div class="wk-col-h neg">▼ Turun (${fmtN(turun.length)} DEPO)</div>
+            <div class="wk-chips">${turun.length ? turun.slice().reverse().map(chip).join('') : '<span class="wk-empty">Tidak ada DEPO turun</span>'}</div>
+          </div>
+        </div>
+        ${stabil.length ? `<div class="wk-flat">● Stabil: ${stabil.map(r => esc(r.dep)).join(', ')}</div>` : ''}
+        <ul class="wk-summary">
+          ${best ? `<li><strong class="pos">Naik terbesar:</strong> ${esc(best.dep)} ${fmtDelta(best.delta)} (${pctTxt(best.last, best.prev)}) · ${fmtVal(best.prev)} → ${fmtVal(best.last)}</li>` : '<li>Tidak ada kenaikan antar minggu terakhir.</li>'}
+          ${worst ? `<li><strong class="neg">Turun terbesar:</strong> ${esc(worst.dep)} ${fmtDelta(worst.delta)} (${pctTxt(worst.last, worst.prev)}) · ${fmtVal(worst.prev)} → ${fmtVal(worst.last)}</li>` : '<li>Tidak ada penurunan antar minggu terakhir.</li>'}
+        </ul>
+        <p class="wk-note">Perbandingan: minggu <strong>${esc(wLast)}</strong> vs <strong>${esc(wPrev)}</strong> (data filter aktif). Nilai 0 di kedua minggu dihitung stabil.</p>
+      </div>`;
+  }
+
   function renderDepo(rows, dealers) {
     const el = document.getElementById('page-depo');
     if (!el) return;
@@ -3506,6 +3690,7 @@
           <span class="badge-soft">${fmtN(weekLabels.length)} minggu</span>
         </div>
         <div class="chart-box"><canvas id="cDepoRevWeek"></canvas></div>
+        <div id="depoRevWeekInsight"></div>
       </section>
       <section class="section" style="border:2px solid #b7d4ef">
         <div class="section-head">
@@ -3516,6 +3701,7 @@
           <span class="badge-soft">${fmtN(depoOrderWeek.length)} DEPO</span>
         </div>
         <div class="chart-box"><canvas id="cDepoBoWeek"></canvas></div>
+        <div id="depoBoWeekInsight"></div>
       </section>
       <section class="section" style="border:2px solid #b7d4ef">
         <div class="section-head">
@@ -3529,8 +3715,24 @@
         <div class="legend-sam-zero" style="margin-top:10px">
           Warna garis: ${depoOrderWeek.map((d, i) => `<span style="color:${depoLineColor(d, i)};font-weight:900">${esc(d)}</span>`).join(' · ') || '—'}
         </div>
+        <div id="depoQvoWeekInsight"></div>
       </section>
     `;
+
+    // Keterangan naik/turun (setelah DOM section terpasang)
+    const setInsight = (id, html) => {
+      const node = document.getElementById(id);
+      if (node) node.innerHTML = html;
+    };
+    setInsight('depoRevWeekInsight', buildWeeklyDepoInsightHtml(
+      seriesRevWeekByDepo, weekLabels, depoOrderWeek, 'rev', 'Revenue'
+    ));
+    setInsight('depoBoWeekInsight', buildWeeklyDepoInsightHtml(
+      seriesBoWeekByDepo, weekLabels, depoOrderWeek, 'count', 'Achievement BO'
+    ));
+    setInsight('depoQvoWeekInsight', buildWeeklyDepoInsightHtml(
+      seriesQvoWeekByDepo, weekLabels, depoOrderWeek, 'count', 'Achievement QVO'
+    ));
 
     document.getElementById('depoCards').innerHTML = list.map(([d, v], idx) => {
       const share = tot ? v.amt / tot : 0;
