@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>DASHBOARD UJUNG WETAN · HP v6</title>
+  <title>DASHBOARD UJUNG WETAN · HP v7</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- Default data URL (GitHub Pages). Opsional: config.js di root bisa menimpa ini. -->
@@ -696,10 +696,23 @@
       padding: 6px 0; border-top: 1px dashed #e5eef8; font-size: .8rem;
     }
     .unit-row:first-of-type { border-top: none; }
-    .unit-row .un { font-weight: 800; color: var(--text); }
+    .unit-row .un {
+      font-weight: 800; color: var(--text);
+      min-width: 0; overflow-wrap: anywhere; word-break: break-word;
+    }
     .unit-row .uq { font-weight: 900; color: var(--tam2); white-space: nowrap; }
     .unit-row .ua { font-weight: 800; color: var(--muted); white-space: nowrap; font-size: .72rem; }
     .unit-more { font-size: .72rem; color: var(--muted); font-weight: 700; margin-top: 4px; }
+    @media (max-width: 420px) {
+      .unit-row {
+        grid-template-columns: 1fr auto;
+        grid-template-areas: "un un" "uq ua";
+        gap: 2px 10px; padding: 8px 0;
+      }
+      .unit-row .un { grid-area: un; font-size: .78rem; }
+      .unit-row .uq { grid-area: uq; font-size: .72rem; }
+      .unit-row .ua { grid-area: ua; font-size: .72rem; }
+    }
 
     .empty { text-align: center; color: var(--muted); padding: 28px 12px; font-weight: 600; }
 
@@ -1258,6 +1271,75 @@
     return true;
   }
 
+  /** Cache rincian type SKU per dealer (mode HP) — key filter|sales|dealer */
+  const skuUnitsCache = new Map();
+  function clearSkuUnitsCache() {
+    skuUnitsCache.clear();
+  }
+
+  /**
+   * Agregasi type SKU (Alias) untuk 1 dealer + sales dari dealer_grain.
+   * Sama logika Achievement SKU desktop: qty + amt with tax, normalize type.
+   */
+  function buildSkuUnitsForDealer(salesName, dealerName) {
+    const sales = String(salesName || '').trim();
+    const dealer = String(dealerName || '').trim();
+    if (!sales || !dealer) return [];
+    const key = stateFilterKey() + '||' + sales + '||' + dealer;
+    if (skuUnitsCache.has(key)) return skuUnitsCache.get(key);
+
+    const skuMap = new Map();
+    const grain = DATA.dealer_grain || [];
+    for (let i = 0; i < grain.length; i++) {
+      const r = grain[i];
+      if (r.sales !== sales) continue;
+      const name = r.dealer || r.soldto;
+      if (name !== dealer) continue;
+      if (!passFilter(r)) continue;
+      const brand = r.brand || 'SAMSUNG';
+      if (!Array.isArray(r.sku_items)) continue;
+      for (const it of r.sku_items) {
+        const sk = normalizeSku(brand, it.sku || it.unit || 'Unknown');
+        if (!skuMap.has(sk)) skuMap.set(sk, { unit: sk, qty: 0, amt: 0 });
+        const u = skuMap.get(sk);
+        u.qty += Number(it.qty) || 0;
+        const tax = (it.amt_tax != null && it.amt_tax !== '')
+          ? Number(it.amt_tax) || 0
+          : Number(it.amt) || 0;
+        u.amt += tax;
+      }
+    }
+    const list = [...skuMap.values()].sort((a, b) => b.qty - a.qty || b.amt - a.amt);
+    skuUnitsCache.set(key, list);
+    return list;
+  }
+
+  /** HTML daftar type SKU (dipakai desktop outlet + Sales HP) */
+  function renderSkuTypeListHtml(units, { maxShow = 20, title } = {}) {
+    const n = (units && units.length) || 0;
+    const head = title != null
+      ? title
+      : `Type SKU · ${fmtN(n)} item (type · RAM/internal)${n > maxShow ? ' · top ' + maxShow : ''}`;
+    if (!n) {
+      return `<div class="unit-box">
+        <div class="uh">${esc(head)}</div>
+        <div class="unit-more">Tidak ada detail type SKU pada filter ini</div>
+      </div>`;
+    }
+    const shown = units.slice(0, maxShow);
+    const rest = n - shown.length;
+    return `<div class="unit-box">
+      <div class="uh">${esc(head)}</div>
+      ${shown.map(u => `
+        <div class="unit-row">
+          <div class="un">${esc(u.unit)}</div>
+          <div class="uq">Qty ${fmtN(u.qty)}</div>
+          <div class="ua">${fmtIDR(u.amt)}</div>
+        </div>`).join('')}
+      ${rest > 0 ? `<div class="unit-more">+${fmtN(rest)} type lainnya</div>` : ''}
+    </div>`;
+  }
+
   /** Multi-filter helpers: [] = Semua */
   const isAll = (arr) => !arr || !arr.length;
   const matchMulti = (arr, val) => {
@@ -1741,6 +1823,8 @@
     let mSalesQ = '';
     let mDealerQ = '';
     let mFilterOpen = true; // panel filter default terbuka di Sales
+    /** Key dealer yang dibuka rincian type SKU: "dealerName" */
+    let mSkuExpandDealer = '';
     const skuClassOptsMobile = [
       { v: '0-1', t: 'SKU 0–1' },
       { v: '2-3', t: 'SKU 2–3' },
@@ -1763,6 +1847,7 @@
       mSalesPack = null;
       filteredPack = null;
       filteredPackKey = '';
+      clearSkuUnitsCache();
     };
 
     const selStyle = 'width:100%;border:1px solid #c5d4e8;border-radius:10px;padding:10px;font-size:.85rem;font-weight:700;background:#fff;margin-top:4px';
@@ -2000,9 +2085,24 @@
           const tot = brandCols.reduce((a, b) => a + (Number(d[b]) || 0), 0);
           const belum = !isSalesQvo(d.SAMSUNG);
           const skuN = Number(d.sku) || 0;
-          return `<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px;margin-bottom:8px;${belum ? 'background:#fef2f2' : 'background:#fff'}">
+          const dName = String(d.dealer || '');
+          const open = mSkuExpandDealer === dName;
+          let skuDetailHtml = '';
+          if (open) {
+            const units = buildSkuUnitsForDealer(s.sales, dName);
+            const count = units.length || skuN;
+            skuDetailHtml = renderSkuTypeListHtml(units, {
+              maxShow: 30,
+              title: `Rincian type · ${fmtN(count)} SKU (with tax)`,
+            });
+          }
+          return `<div class="m-dealer-card" style="border:1px solid #e2e8f0;border-radius:12px;padding:10px;margin-bottom:8px;${belum ? 'background:#fef2f2' : 'background:#fff'}">
             <div style="font-weight:900;font-size:.8rem;line-height:1.3">${i + 1}. ${esc(d.dealer || '-')}${belum ? ' <span style="color:#b91c1c;font-size:.65rem">BELUM QVO</span>' : ''}</div>
-            <div style="margin-top:4px;font-size:.68rem;font-weight:800;color:#7c3aed">SKU ${fmtN(skuN)}</div>
+            <button type="button" class="m-sku-toggle" data-dealer="${esc(dName)}"
+              style="margin-top:6px;width:100%;text-align:left;border:1px solid #ddd6fe;background:${open ? '#ede9fe' : '#f5f3ff'};color:#5b21b6;border-radius:10px;padding:8px 10px;font-weight:900;font-size:.72rem;cursor:pointer">
+              SKU ${fmtN(skuN)} · ${open ? '▼ tutup rincian type' : '▶ buka rincian type'}
+            </button>
+            ${skuDetailHtml}
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px;font-size:.68rem;font-weight:800">
               <span style="color:#1d4ed8">SAM ${fmtIDR(d.SAMSUNG)}</span>
               <span style="color:#ea580c">XIM ${fmtIDR(d.XIAOMI)}</span>
@@ -2021,6 +2121,7 @@
             Belum QVO Samsung: ${fmtN(s.belumQvoSam)} · Sudah: ${fmtN(s.sudahQvoSam)}
             ${!isAll(selectedSkuClass) ? ' · Filter SKU aktif' : ''}
           </div>
+          <p style="font-size:.68rem;color:#64748b;font-weight:700;margin-bottom:8px">Tap <strong>SKU · buka rincian type</strong> pada dealer untuk lihat daftar type + RAM/internal.</p>
           <label style="${labelStyle}">Cari dealer</label>
           <input id="mDealerSearch" type="search" value="${esc(mDealerQ)}" placeholder="Ketik nama dealer…" style="${selStyle}" />
           <div style="margin-top:10px">${dealerCards}</div>
@@ -2028,7 +2129,12 @@
         `) + foot();
 
         mountSalesFilters();
-        document.getElementById('mSalesBack').onclick = () => { mSalesFocus = ''; mDealerQ = ''; paintSalesMobile(); };
+        document.getElementById('mSalesBack').onclick = () => {
+          mSalesFocus = '';
+          mDealerQ = '';
+          mSkuExpandDealer = '';
+          paintSalesMobile();
+        };
         const ds = document.getElementById('mDealerSearch');
         if (ds) {
           ds.oninput = () => {
@@ -2037,6 +2143,13 @@
             ds._t = setTimeout(() => paintSalesMobile(), 200);
           };
         }
+        app.querySelectorAll('.m-sku-toggle').forEach(btn => {
+          btn.onclick = () => {
+            const name = btn.getAttribute('data-dealer') || '';
+            mSkuExpandDealer = (mSkuExpandDealer === name) ? '' : name;
+            paintSalesMobile();
+          };
+        });
         return;
       }
 
@@ -2122,6 +2235,24 @@
           ${options.map(o => `<option value="${o}" ${val === o ? 'selected' : ''}>${o}</option>`).join('')}
         </select>`;
 
+      const breakRow = (label, val, { cls = '', used = true, raw = null, note = '', sign = '−' } = {}) => {
+        const rawHint = (!used && raw != null && Number(raw) !== 0)
+          ? `<span class="comp-note">Nilai sheet: ${fmtRp(raw)} · tidak dipakai</span>`
+          : (note ? `<span class="comp-note">${esc(note)}</span>` : '');
+        let valText = '—';
+        if (used) {
+          const n = Number(val) || 0;
+          if (!n) valText = sign === '+' ? '+ ' + fmtRp(0) : '−';
+          else valText = (sign === '+' ? '+ ' : '− ') + fmtRp(Math.abs(n));
+        } else {
+          valText = 'tidak dipakai';
+        }
+        return `<tr class="${cls} ${used ? '' : 'off'}">
+          <td class="comp"><strong>${esc(label)}</strong>${rawHint}</td>
+          <td class="n">${valText}</td>
+        </tr>`;
+      };
+
       app.innerHTML = banner() + card('KALKULATOR MARGIN (HP)', `
         <label style="${labelStyle}">Material / Type</label>
         <select id="mCalcMat" style="${selStyle}">${matOpts}</select>
@@ -2131,7 +2262,10 @@
           ${toggleRow('mCalcAcc', 'Account', calcState.account || 'TIDAK', ['TIDAK', 'SHADOW', 'EC', 'NSP'])}
           ${toggleRow('mCalcReb', 'Rebate', calcState.rebate || 'YA', ['YA', 'TIDAK'])}
         </div>
-        ${item.remark ? `<div style="margin-top:10px;background:#fff7ed;border-radius:10px;padding:8px;font-size:.72rem;font-weight:700;color:#9a3412"><strong>REMARK:</strong> ${esc(item.remark)}</div>` : ''}
+        ${item.remark
+          ? `<div class="calc-remark" style="margin-top:10px"><strong>REMARK:</strong> ${esc(item.remark)}</div>`
+          : `<div class="calc-remark" style="margin-top:10px;background:#f8fafc;border-color:#e2e8f0;color:#64748b"><strong>REMARK:</strong> — (kosong di sheet)</div>`}
+
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px">
           <div style="background:linear-gradient(135deg,${marginNeg ? '#b91c1c,#ea580c' : '#047857,#0d9488'});color:#fff;border-radius:12px;padding:12px">
             <div style="font-size:.65rem;font-weight:800;opacity:.9">MARGIN</div>
@@ -2146,10 +2280,69 @@
           <div style="font-size:.65rem;font-weight:800;opacity:.9">HARGA LOWEST</div>
           <div style="font-size:1.1rem;font-weight:900;margin-top:4px">${fmtRp(m.hargaLowest)}</div>
         </div>
-        <div style="margin-top:12px;font-size:.72rem;font-weight:700;color:#475569;line-height:1.45;background:#f8fafc;border-radius:10px;padding:10px">
-          <div>RRP ${fmtRp(m.rrp)} · STP ${fmtRp(m.stp)}</div>
-          <div style="margin-top:4px">Margin = (RRP−STP)${m.useRebate ? ' + REBATE' : ''}${m.useShadow ? ' + SHADOW' : ''}${m.useEc ? ' + EC' : ''}${m.useNsp ? ' + NSP' : ''} · tanpa CB/TI</div>
-          <div style="margin-top:4px">Lowest = STP − (PWP${m.useCb ? ' + CB' : ''}${m.useTi ? ' + TI' : ''}${m.useRebate ? ' + REBATE' : ''}${m.useShadow ? ' + SHADOW' : ''}${m.useEc ? ' + EC' : ''}${m.useNsp ? ' + NSP' : ''})</div>
+
+        <div style="margin-top:14px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+          <table class="calc-break" style="min-width:280px;font-size:.78rem">
+            <thead>
+              <tr>
+                <th>1) Rincian Margin</th>
+                <th class="n">Nilai</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="rrp">
+                <td class="comp"><strong>RRP − STP</strong><span class="comp-note">${fmtRp(m.rrp)} − ${fmtRp(m.stp)}</span></td>
+                <td class="n">${fmtRp(m.baseSpread)}</td>
+              </tr>
+              ${breakRow('REBATE 1%', m.rebate, { cls: 'deduct', used: m.useRebate, raw: m.rebateRaw, sign: '+', note: m.useRebate ? 'Filter YA → + Margin' : 'Filter TIDAK' })}
+              ${breakRow('SHADOW', m.shadow, { cls: 'deduct', used: m.useShadow, raw: m.shadowRaw, sign: '+', note: m.useShadow ? 'Account = SHADOW' : 'Ditutup' })}
+              ${breakRow('EC PARTNERSHIP', m.ec, { cls: 'deduct', used: m.useEc, raw: m.ecRaw, sign: '+', note: m.useEc ? 'Account = EC' : 'Ditutup' })}
+              ${breakRow('NSP', m.nsp, { cls: 'deduct', used: m.useNsp, raw: m.nspRaw, sign: '+', note: m.useNsp ? 'Account = NSP' : 'Ditutup' })}
+              <tr class="total">
+                <td class="comp"><strong>MARGIN</strong><span class="comp-note">(RRP−STP)+Rebate+Account · tanpa CB/TI</span></td>
+                <td class="n" style="${marginNeg ? 'color:#b91c1c' : ''}">${fmtRp(m.margin)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top:12px;overflow-x:auto;-webkit-overflow-scrolling:touch">
+          <table class="calc-break" style="min-width:280px;font-size:.78rem">
+            <thead>
+              <tr>
+                <th>2) Rincian Harga Lowest</th>
+                <th class="n">Nilai</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="rrp">
+                <td class="comp"><strong>STP</strong></td>
+                <td class="n">${fmtRp(m.stp)}</td>
+              </tr>
+              ${breakRow('PWP', m.pwp, { cls: 'deduct', used: true, note: 'Selalu dihitung' })}
+              ${breakRow('CASHBACK REGULAR', m.cashback, { cls: 'deduct', used: m.useCb, raw: m.cashbackRaw, note: m.useCb ? 'Filter YA' : 'Filter TIDAK' })}
+              ${breakRow('TRADE IN (UP TO)', m.tradeIn, { cls: 'deduct', used: m.useTi, raw: m.tradeInRaw, note: m.useTi ? 'Filter YA' : 'Filter TIDAK' })}
+              ${breakRow('REBATE 1%', m.rebate, { cls: 'deduct', used: m.useRebate, raw: m.rebateRaw, note: m.useRebate ? 'Filter YA' : 'Filter TIDAK' })}
+              ${breakRow('EC PARTNERSHIP', m.ec, { cls: 'deduct', used: m.useEc, raw: m.ecRaw, note: m.useEc ? 'Account = EC' : 'Ditutup' })}
+              ${breakRow('SHADOW', m.shadow, { cls: 'deduct', used: m.useShadow, raw: m.shadowRaw, note: m.useShadow ? 'Account = SHADOW' : 'Ditutup' })}
+              ${breakRow('NSP', m.nsp, { cls: 'deduct', used: m.useNsp, raw: m.nspRaw, note: m.useNsp ? 'Account = NSP' : 'Ditutup' })}
+              <tr class="total">
+                <td class="comp"><strong>HARGA LOWEST</strong><span class="comp-note">STP − (PWP + program aktif)</span></td>
+                <td class="n" style="${lowestNeg ? 'color:#b91c1c' : ''}">${fmtRp(m.hargaLowest)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="calc-formula" style="margin-top:12px">
+          <strong>Rumus Margin:</strong>
+          (RRP − STP)${m.useRebate ? ' + REBATE 1%' : ''}${m.useShadow ? ' + SHADOW' : ''}${m.useEc ? ' + EC' : ''}${m.useNsp ? ' + NSP' : ''}
+          · tanpa Cashback &amp; Trade In
+          <br>
+          <strong>Margin %:</strong> Margin ÷ RRP × 100 = <strong>${(m.marginPct * 100).toFixed(2)}%</strong>
+          <br>
+          <strong>Rumus Harga Lowest:</strong>
+          STP − (PWP${m.useCb ? ' + CASHBACK' : ''}${m.useTi ? ' + TRADE IN' : ''}${m.useRebate ? ' + REBATE' : ''}${m.useEc ? ' + EC' : ''}${m.useShadow ? ' + SHADOW' : ''}${m.useNsp ? ' + NSP' : ''})
         </div>
       `) + foot();
 
@@ -2166,7 +2359,7 @@
 
     const banner = () => `
       <div style="background:#ecfdf5;border:2px solid #6ee7b7;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-weight:900;color:#065f46;font-size:.78rem">
-        MODE HP v6 · Filter SKU Sales · Geser menu bawah
+        MODE HP v7 · Rincian SKU type · Kalkulator detail · Geser menu bawah
       </div>`;
     const foot = () => `
       <p style="text-align:center;color:#94a3b8;font-size:.68rem;font-weight:700;padding:8px 0 20px">
@@ -2217,7 +2410,7 @@
       filteredPack = null;
       filteredPackKey = '';
       document.getElementById('subHead').textContent =
-        `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · HP v6`;
+        `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · HP v7`;
       setBootProgress(99, 'Merender menu…');
       await new Promise(r => setTimeout(r, 20));
 
@@ -2523,6 +2716,7 @@
    */
   function apply() {
     updateActiveTags();
+    clearSkuUnitsCache();
     // pastikan page aktif terlihat
     document.querySelectorAll('.page').forEach(p => {
       p.classList.toggle('on', p.id === 'page-' + page);
