@@ -7,16 +7,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>DASHBOARD UJUNG WETAN · HP v9</title>
+  <title>DASHBOARD UJUNG WETAN · HP v10</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- Default data URL (GitHub Pages). Opsional: config.js di root bisa menimpa ini. -->
   <script>
     window.DASHBOARD_CONFIG = window.DASHBOARD_CONFIG || { dataUrl: 'data.json.gz' };
     // Versi UI — ganti angka ini setiap rilis agar cache browser/HP ikut refresh
-    window.DASHBOARD_UI_VERSION = '9';
+    window.DASHBOARD_UI_VERSION = '10';
   </script>
-  <script src="config.js?v=9" onerror="/* config.js opsional — 404 diabaikan */"></script>
+  <script src="config.js?v=10" onerror="/* config.js opsional — 404 diabaikan */"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <style>
@@ -1118,6 +1118,28 @@
     @media (min-width: 1100px) {
       .nav-btn { font-size: .78rem; padding: 12px 8px; gap: 8px; }
     }
+
+    /* Mode HP: hanya Sales + Kalkulator (2 tombol) */
+    body.mode-hp .bottom-nav-inner {
+      max-width: 420px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 4px 8px;
+      justify-content: stretch;
+    }
+    body.mode-hp .nav-btn {
+      flex: none;
+      width: 100%;
+      min-width: 0;
+      flex-direction: row;
+      justify-content: center;
+      gap: 8px;
+      font-size: .85rem;
+      padding: 12px 10px;
+      border-radius: 12px;
+    }
+    body.mode-hp .nav-btn .ico { font-size: 1.15rem; }
   </style>
 </head>
 <body>
@@ -1825,8 +1847,18 @@
     return 'data.json.gz';
   }
 
-  /** Mode HP: tampilan sederhana inline-style (tidak mengandalkan CSS .page yang sering blank di Safari) */
+  /** Mode HP: tampilan sederhana — HANYA menu Sales + Kalkulator */
   function renderMobileApp() {
+    document.body.classList.add('mode-hp');
+    // Nav bawah: hanya 2 menu
+    const nav = document.getElementById('bottomNav');
+    const navInner = nav && nav.querySelector('.bottom-nav-inner');
+    if (navInner) {
+      navInner.innerHTML = `
+        <button class="nav-btn on" data-page="sales" type="button"><span class="ico">👤</span>Sales</button>
+        <button class="nav-btn" data-page="kalkulator" type="button"><span class="ico">🧮</span>Kalkulator</button>
+      `;
+    }
     const grain = DATA.grain || [];
     const brands = Object.fromEntries(BRANDS.map(b => [b, { amt: 0, qty: 0 }]));
     let totalAmt = 0, totalQty = 0;
@@ -2418,7 +2450,7 @@
 
     const banner = () => `
       <div style="background:#ecfdf5;border:2px solid #6ee7b7;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-weight:900;color:#065f46;font-size:.78rem">
-        MODE HP v9 · DEPO QVO + weekly · Rincian SKU/kalkulator · Geser menu bawah
+        MODE HP v10 · Hanya Sales &amp; Kalkulator
       </div>`;
     const foot = () => `
       <p style="text-align:center;color:#94a3b8;font-size:.68rem;font-weight:700;padding:8px 0 20px">
@@ -2426,66 +2458,30 @@
       </p>`;
 
     const paint = (key) => {
+      // HP: hanya Sales & Kalkulator
+      if (key !== 'sales' && key !== 'kalkulator') key = 'sales';
       page = key;
       document.querySelectorAll('.nav-btn').forEach(b => {
         b.classList.toggle('on', b.dataset.page === key);
       });
       try { window.scrollTo(0, 0); } catch (_) {}
 
-      if (key === 'sales') {
-        paintSalesMobile();
-        return;
-      }
       if (key === 'kalkulator') {
         paintCalcMobile();
         return;
       }
-      if (key === 'depo') {
-        // DEPO penuh (QVO + grafik weekly per DEPO) — sama logika desktop
-        const app = document.getElementById('app');
-        if (!app) return;
-        app.innerHTML = banner() + `
-          <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:8px 10px;margin-bottom:10px;font-size:.72rem;font-weight:800;color:#1e3a8a">
-            DEPO HP: rincian QVO per depo + grafik weekly (Revenue / BO / QVO) · garis per DEPO
-          </div>
-          <div id="page-depo"></div>
-        ` + foot();
-        try {
-          const rows = filteredGrain();
-          const dealers = filteredDealer();
-          renderDepo(rows, dealers);
-        } catch (err) {
-          console.warn(err);
-          const host = document.getElementById('page-depo');
-          if (host) {
-            host.innerHTML = card('DEPO', `
-              <p style="font-weight:700;color:#b91c1c">Gagal memuat grafik DEPO di HP.</p>
-              <p style="font-size:.75rem;color:#64748b;font-weight:700;margin-top:6px">${esc(String(err && err.message ? err.message : err))}</p>
-              ${depoRows}
-            `);
-          }
-        }
-        return;
-      }
-
-      const app = document.getElementById('app');
-      if (!app) return;
-      app.innerHTML = `
-        ${banner()}
-        ${panels[key] || panels.overview}
-        ${foot()}
-      `;
+      paintSalesMobile();
     };
 
     document.getElementById('bottomNav').hidden = false;
     document.querySelectorAll('.nav-btn').forEach(btn => {
-      btn.onclick = () => paint(btn.dataset.page || 'overview');
+      btn.onclick = () => paint(btn.dataset.page || 'sales');
     });
     // Sembunyikan tombol present yang sering mengganggu di HP
     const bp = document.getElementById('btnPresent');
     if (bp) bp.style.display = 'none';
 
-    paint('overview');
+    paint('sales');
   }
 
   async function boot() {
@@ -2495,9 +2491,9 @@
       DATA = await loadDashboardData(dataUrl);
       filteredPack = null;
       filteredPackKey = '';
-      const uiVer = window.DASHBOARD_UI_VERSION || '9';
+      const uiVer = window.DASHBOARD_UI_VERSION || '10';
       document.getElementById('subHead').textContent =
-        `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · UI v${uiVer}${isMobileDevice() ? ' · HP' : ''}`;
+        `PT TELETAMA ARTHA MANDIRI · Update ${DATA.generated || '-'} · UI v${uiVer}${isMobileDevice() ? ' · HP Sales+Kalkulator' : ''}`;
       setBootProgress(99, 'Merender menu…');
       await new Promise(r => setTimeout(r, 20));
 
@@ -2534,6 +2530,20 @@
   }
 
   function buildUI() {
+    document.body.classList.remove('mode-hp');
+    // Kembalikan menu lengkap PC (jika sebelumnya diganti mode HP)
+    const navInner = document.querySelector('#bottomNav .bottom-nav-inner');
+    if (navInner && !navInner.querySelector('[data-page="overview"]')) {
+      navInner.innerHTML = `
+        <button class="nav-btn on" data-page="overview" type="button"><span class="ico">🏠</span>Ringkas</button>
+        <button class="nav-btn" data-page="brands" type="button"><span class="ico">📊</span>Brand</button>
+        <button class="nav-btn" data-page="depo" type="button"><span class="ico">📍</span>DEPO</button>
+        <button class="nav-btn" data-page="sales" type="button"><span class="ico">👤</span>Sales</button>
+        <button class="nav-btn" data-page="kalkulator" type="button"><span class="ico">🧮</span>Kalkulator</button>
+        <button class="nav-btn" data-page="review-dealer" type="button"><span class="ico">📋</span>Review Dealer</button>
+        <button class="nav-btn" data-page="review-sales" type="button"><span class="ico">📈</span>Review Sales</button>
+      `;
+    }
     const m = DATA.meta;
     const depos = m.depos.filter(d => d !== 'Unknown');
 
