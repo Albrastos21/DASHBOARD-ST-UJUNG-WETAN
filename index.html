@@ -1287,7 +1287,7 @@
   let reviewDealerQvo = []; // multi · kosong = semua
   let reviewDealerSort = 'belum'; // belum | sam | total
   /** Filter lokal menu Review Sales (multi) */
-  let revSalesFilter = { sales: [], year: [], month: [] };
+  let revSalesFilter = { sales: [], year: [], month: [], vcClass: [] };
   /** Tools banding bulan di Review Sales */
   let revCompare = {
     focusMonth: '',      // e.g. Jul
@@ -2676,7 +2676,7 @@
       selectedSkuClass = [];
       selectedQvo = [];
       reviewDealerQvo = [];
-      revSalesFilter = { sales: [], year: [], month: [] };
+      revSalesFilter = { sales: [], year: [], month: [], vcClass: [] };
       revCompare = { focusMonth: '', compareMonth: '', focusYear: '', tab: 'sales', mode: 'single' };
       salesDeepLink = null;
       remountGlobalSlicers();
@@ -5859,6 +5859,7 @@
     revSalesFilter.sales = asArr(revSalesFilter.sales).filter(s => allSalesNames.includes(s));
     revSalesFilter.year = asArr(revSalesFilter.year);
     revSalesFilter.month = asArr(revSalesFilter.month);
+    revSalesFilter.vcClass = asArr(revSalesFilter.vcClass).filter(v => ['0', '1', '2', '3', '4'].includes(String(v)));
 
     const baseGrain = (DATA.grain || []).filter(passBase);
     const baseDealer = (DATA.dealer_grain || []).filter(passBase);
@@ -6279,6 +6280,13 @@
       byYM[o.year].get(o.month).set(o.name, o);
     }
 
+    // Filter klasifikasi value (multi) — kosong = semua bucket
+    const vcClassFilter = asArr(revSalesFilter.vcClass);
+    const matchVcClass = (cls) => isAll(vcClassFilter) || vcClassFilter.includes(String(cls));
+    const vcClassHint = isAll(vcClassFilter)
+      ? 'Semua kelas'
+      : vcClassFilter.map(id => VC_DEFS[Number(id)]?.short || id).join(', ');
+
     // Semua bulan yang punya data (tanpa batasi filter — dipakai cari bulan prev MoM)
     const vcMonthsAll = monthsOrd.filter(m =>
       (byYM['2025']?.get(m)?.size || 0) + (byYM['2026']?.get(m)?.size || 0) > 0
@@ -6296,8 +6304,11 @@
       const map = byYM[year]?.get(month);
       const c = VC_DEFS.map(d => ({ id: d.id, label: d.label, short: d.short, n: 0, rev: 0, q: 0 }));
       let total = 0, rev = 0, qty = 0;
+      const filteredMap = new Map();
       if (map) {
         for (const o of map.values()) {
+          if (!matchVcClass(o.cls)) continue;
+          filteredMap.set(o.name, o);
           c[o.cls].n += 1;
           c[o.cls].rev += o.amt;
           c[o.cls].q += o.qty;
@@ -6306,7 +6317,7 @@
           qty += o.qty;
         }
       }
-      return { c, total, rev, qty, map: map || new Map() };
+      return { c, total, rev, qty, map: filteredMap };
     };
 
     // Snapshot per bulan — HANYA bulan yang lolos filter slicer
@@ -6359,18 +6370,20 @@
 
     // Rincian naik/turun kelas = MoM di tahun fokus (sesuai filter bulan yang dilihat)
     // Contoh filter Jun 2026 → bandingkan Mei 2026 vs Jun 2026 — hanya 2 tabel
+    // Pakai map penuh + filter kelas (prev ATAU cur) agar perpindahan antar bucket tetap terlihat
     const momPrevMonth = vcMomPrevMonth || '';
     let momUp = 0, momDown = 0, momStay = 0;
     const momDownList = [];
     const momUpList = [];
     if (vcFocusMonth && momPrevMonth) {
-      const prev = classCounts(vcFocusYear, momPrevMonth);
-      const cur = focusCurY;
-      const names = new Set([...prev.map.keys(), ...cur.map.keys()]);
+      const prevFull = byYM[vcFocusYear]?.get(momPrevMonth) || new Map();
+      const curFull = byYM[vcFocusYear]?.get(vcFocusMonth) || new Map();
+      const names = new Set([...prevFull.keys(), ...curFull.keys()]);
       for (const name of names) {
-        const a = prev.map.get(name);
-        const b = cur.map.get(name);
+        const a = prevFull.get(name);
+        const b = curFull.get(name);
         if (!a || !b) continue;
+        if (!matchVcClass(a.cls) && !matchVcClass(b.cls)) continue;
         const rec = {
           name, city: b.city || a.city,
           a25: a.amt, a26: b.amt, // prev vs cur (reuse field names)
@@ -6679,10 +6692,17 @@
         <div class="section-head">
           <div>
             <h3>Klasifikasi Dealer by Value (Per Bulan)</h3>
-            <p><strong>Nett Amount With Tax</strong> · bucket per bulan · fokus: <strong>${esc(vcFocusMonth || '—')} ${esc(vcFocusYear || '')}</strong>${isMonthFiltered ? ' · filter Bulan: ' + esc(fmtMulti(monthFilter, 'Semua', 4)) : ' · semua bulan'}${vcMomPrevMonth ? ' · MoM vs ' + esc(vcMomPrevMonth) : ''} · Sales: <strong>${esc(salesLabel)}</strong></p>
+            <p><strong>Nett Amount With Tax</strong> · bucket per bulan · fokus: <strong>${esc(vcFocusMonth || '—')} ${esc(vcFocusYear || '')}</strong>${isMonthFiltered ? ' · filter Bulan: ' + esc(fmtMulti(monthFilter, 'Semua', 4)) : ' · semua bulan'}${vcMomPrevMonth ? ' · MoM vs ' + esc(vcMomPrevMonth) : ''} · Sales: <strong>${esc(salesLabel)}</strong> · Kelas: <strong>${esc(vcClassHint)}</strong></p>
+          </div>
+        </div>
+        <div class="filter-row" style="margin-bottom:8px">
+          <div class="field">
+            <label>Filter Klasifikasi Dealer (multi + cari)</label>
+            <div id="revSalesVcClass"></div>
           </div>
         </div>
         ${focusClassNote ? `<div class="cmp-insight">${focusClassNote}</div>` : ''}
+        ${!isAll(vcClassFilter) ? `<div class="cmp-insight">Menampilkan dealer di kelas: <strong>${esc(vcClassHint)}</strong> · kartu, chart, matrix &amp; rincian MoM mengikuti filter ini.</div>` : ''}
 
         <div class="rd-vc-grid">${vcCardHtml}</div>
 
@@ -7113,6 +7133,13 @@
       allLabel: 'Semua Bulan',
       searchPlaceholder: 'Cari bulan…',
       onChange: (vals) => { revSalesFilter.month = vals; renderReviewSales(); },
+    });
+    mountMultiSelect(document.getElementById('revSalesVcClass'), {
+      options: VC_DEFS.map(d => ({ v: String(d.id), t: d.label + ' (' + d.short + ')' })),
+      selected: revSalesFilter.vcClass,
+      allLabel: 'Semua Klasifikasi Value',
+      searchPlaceholder: 'Cari kelas value…',
+      onChange: (vals) => { revSalesFilter.vcClass = vals; renderReviewSales(); },
     });
 
     document.getElementById('cmpFocusYear').onchange = (e) => {
