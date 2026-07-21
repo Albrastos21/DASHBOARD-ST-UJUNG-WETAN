@@ -7,16 +7,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>DASHBOARD UJUNG WETAN · HP v10</title>
+  <title>DASHBOARD UJUNG WETAN · HP v12</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- Default data URL (GitHub Pages). Opsional: config.js di root bisa menimpa ini. -->
   <script>
     window.DASHBOARD_CONFIG = window.DASHBOARD_CONFIG || { dataUrl: 'data.json.gz' };
     // Versi UI — ganti angka ini setiap rilis agar cache browser/HP ikut refresh
-    window.DASHBOARD_UI_VERSION = '10';
+    window.DASHBOARD_UI_VERSION = '12';
   </script>
-  <script src="config.js?v=10" onerror="/* config.js opsional — 404 diabaikan */"></script>
+  <script src="config.js?v=12" onerror="/* config.js opsional — 404 diabaikan */"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <style>
@@ -1370,7 +1370,8 @@
 
   /**
    * Satu kali scan grain per sales → index semua dealer (cepat di HP).
-   * Key dealer: nama dealer + soldto (dinormalisasi).
+   * Key dealer: nama unik (dealer / soldto) dinormalisasi.
+   * Qty dijumlah SEKALI per baris grain — jangan double-count jika dealer === soldto.
    */
   function buildSkuIndexForSales(salesName) {
     const sales = String(salesName || '').trim();
@@ -1387,11 +1388,18 @@
       if (!passFilter(r)) continue;
       const brand = r.brand || 'SAMSUNG';
       if (!Array.isArray(r.sku_items) || !r.sku_items.length) continue;
-      const names = [r.dealer, r.soldto].filter(Boolean).map(String);
-      if (!names.length) continue;
-      for (const rawName of names) {
-        const nk = normName(rawName);
-        if (!nk) continue;
+      // Nama unik saja (dealer & soldto di data biasanya sama → dulu qty ×2)
+      const nameKeys = [];
+      const seenNk = new Set();
+      for (const raw of [r.dealer, r.soldto]) {
+        if (!raw) continue;
+        const nk = normName(raw);
+        if (!nk || seenNk.has(nk)) continue;
+        seenNk.add(nk);
+        nameKeys.push(nk);
+      }
+      if (!nameKeys.length) continue;
+      for (const nk of nameKeys) {
         if (!byDealer.has(nk)) byDealer.set(nk, new Map());
         const skuMap = byDealer.get(nk);
         for (const it of r.sku_items) {
@@ -2018,14 +2026,14 @@
 
       'review-dealer': card('REVIEW DEALER', `
         <p style="font-weight:700;font-size:.82rem;line-height:1.45;color:#334155">
-          Klasifikasi dealer & chart butuh memori besar.
+          Scorecard, market share & chart butuh memori besar.
           Gunakan <strong>PC/laptop</strong> untuk Review Dealer penuh.
         </p>
       `),
 
       'review-sales': card('REVIEW SALES', `
         <p style="font-weight:700;font-size:.82rem;line-height:1.45;color:#334155">
-          Review Sales & grafik bulanan optimal di desktop.
+          Review Sales, klasifikasi dealer by value & grafik bulanan optimal di desktop.
         </p>
       `),
     };
@@ -2511,7 +2519,7 @@
 
     const banner = () => `
       <div style="background:#ecfdf5;border:2px solid #6ee7b7;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-weight:900;color:#065f46;font-size:.78rem">
-        MODE HP v10 · Hanya Sales &amp; Kalkulator
+        MODE HP v12 · Hanya Sales &amp; Kalkulator
       </div>`;
     const foot = () => `
       <p style="text-align:center;color:#94a3b8;font-size:.68rem;font-weight:700;padding:8px 0 20px">
@@ -4679,7 +4687,6 @@
       return true;
     };
 
-    const grain = (DATA.grain || []).filter(passRD);
     const dealersAll = (DATA.dealer_grain || []).filter(passRD);
     const dealerFilter = asArr(revDealerNameFilter);
     const hasDealerFilter = !isAll(dealerFilter);
@@ -4951,23 +4958,40 @@
       };
     }).filter(r => r.a25 + r.a26 > 0);
 
-    // Brand share (from grain — consistent with chart 1)
+    // Brand share = porsi value (No Tax) per brand pada baris yang SEDANG DIFILTER
+    // (tahun / bulan / minggu / brand / DEPO / dealer). Total donut = sum dealersF.
+    // Agregat langsung dari dealersF agar tidak hardcode full-year 2026.
+    const brandAmtFiltered = Object.fromEntries(BRANDS.map(b => [b, 0]));
     const brandYearAmt = {
       '2025': Object.fromEntries(BRANDS.map(b => [b, 0])),
       '2026': Object.fromEntries(BRANDS.map(b => [b, 0])),
     };
-    for (const r of grain) {
+    for (const r of dealersF) {
+      const b = r.brand || 'OTHER';
+      const amt = Number(r.amt) || 0;
+      if (brandAmtFiltered[b] === undefined) continue;
+      brandAmtFiltered[b] += amt;
       const y = String(r.year || '');
-      const b = r.brand;
-      if (!brandYearAmt[y] || !b) continue;
-      brandYearAmt[y][b] = (brandYearAmt[y][b] || 0) + (Number(r.amt) || 0);
+      if (brandYearAmt[y] && brandYearAmt[y][b] !== undefined) brandYearAmt[y][b] += amt;
     }
+    const brandTotFiltered = BRANDS.reduce((a, b) => a + (brandAmtFiltered[b] || 0), 0);
     const brandTot = Object.fromEntries(years.map(y => [
       y, BRANDS.reduce((a, b) => a + (brandYearAmt[y][b] || 0), 0),
     ]));
     const brandShare = Object.fromEntries(years.map(y => [
       y, Object.fromEntries(BRANDS.map(b => [b, brandTot[y] ? (brandYearAmt[y][b] || 0) / brandTot[y] : 0])),
     ]));
+    const brandShareFiltered = Object.fromEntries(BRANDS.map(b => [
+      b, brandTotFiltered ? (brandAmtFiltered[b] || 0) / brandTotFiltered : 0,
+    ]));
+    // Periode label untuk judul donut (ikuti slicer aktif)
+    const brandPeriodHint = [
+      !isAll(state.year) ? fmtMulti(state.year, '', 2) : '2025+2026',
+      !isAll(state.month) ? fmtMulti(state.month, '', 4) : 'semua bulan',
+      hasDealerFilter
+        ? (focusList.length === 1 ? focus.name : fmtN(focusList.length) + ' dealer')
+        : 'semua dealer',
+    ].join(' · ');
 
     // City compare rows (chart 2)
     const byCityFocus = new Map();
@@ -5178,11 +5202,32 @@
 
     // Insights short
     const shareInsight = () => {
-      const ranked = BRANDS.slice().sort((a, b) => (brandShare['2026'][b] || 0) - (brandShare['2026'][a] || 0));
+      const ranked = BRANDS.slice().sort(
+        (a, b) => (brandAmtFiltered[b] || 0) - (brandAmtFiltered[a] || 0)
+      );
       const top = ranked[0];
-      return `<strong>Artinya:</strong> porsi value (No Tax) tiap brand di filter aktif.<br>
-        Teratas 2026: <strong>${top}</strong> (${fmtPct(brandShare['2026'][top] || 0)}).<br>
-        ${ranked.map(b => `• ${b}: ${fmtPct(brandShare['2025'][b] || 0)} → ${fmtPct(brandShare['2026'][b] || 0)}`).join('<br>')}`;
+      const tot26 = brandTot['2026'] || 0;
+      const tot25 = brandTot['2025'] || 0;
+      const scope = hasDealerFilter
+        ? (focusList.length === 1
+          ? `dealer <strong>${esc(focus.name)}</strong>`
+          : `<strong>${fmtN(focusList.length)} dealer</strong> terfilter`)
+        : 'semua dealer pada filter brand/DEPO/periode';
+      if (!brandTotFiltered) {
+        return `<strong>Artinya:</strong> porsi value (No Tax) per brand di ${scope}.<br>
+          Belum ada nilai brand pada filter ini — coba reset filter bulan/brand atau pilih dealer lain.`;
+      }
+      return `<strong>Artinya:</strong> porsi value (No Tax) tiap brand di ${scope} (bukan market global).<br>
+        <strong>Total filter aktif: ${fmtIDR(brandTotFiltered)}</strong> · ${esc(brandPeriodHint)}.<br>
+        ${tot25 || tot26 ? `Rincian tahun di filter: 2025 <strong>${fmtIDR(tot25)}</strong> · 2026 <strong>${fmtIDR(tot26)}</strong>.<br>` : ''}
+        Teratas (periode filter): <strong>${top}</strong> (${fmtPct(brandShareFiltered[top] || 0)} · ${fmtIDR(brandAmtFiltered[top] || 0)}).<br>
+        ${ranked.map(b => {
+          const v = brandAmtFiltered[b] || 0;
+          const a25 = brandYearAmt['2025'][b] || 0;
+          const a26 = brandYearAmt['2026'][b] || 0;
+          return `• ${b}: <strong>${fmtIDR(v)}</strong> (${fmtPct(brandShareFiltered[b] || 0)})`
+            + (tot25 || tot26 ? ` · 25 ${fmtIDR(a25)} → 26 ${fmtIDR(a26)}` : '');
+        }).join('<br>')}`;
     };
     const cityContribInsight = () => {
       if (!cityCompare.length) return 'Belum ada data kontribusi kota.';
@@ -5211,338 +5256,13 @@
 
     const filterHint = [
       !isAll(state.year) ? 'Thn ' + fmtMulti(state.year, '', 2) : '2025+2026',
+      !isAll(state.month) ? 'Bln ' + fmtMulti(state.month, '', 4) : 'All bln',
       !isAll(revDealerBrandFilter)
         ? 'Brand ' + fmtMulti(revDealerBrandFilter, '', 3)
         : (!isAll(state.brand) ? 'Brand ' + fmtMulti(state.brand, '', 3) : 'All brand'),
       !isAll(state.depo) ? fmtMulti(state.depo, '', 2) : 'All DEPO',
       hasDealerFilter ? fmtMulti(dealerFilter, '', 2) : 'All dealer',
     ].join(' · ');
-
-    // ——— Klasifikasi dealer by value PER BULAN · Nett Amount WITH TAX ———
-    const VC_DEFS = [
-      { id: 0, label: '0 – 5.000.000', short: '0–5 JT' },
-      { id: 1, label: '5.000.001 – 10.000.000', short: '5–10 JT' },
-      { id: 2, label: '10.000.001 – 15.000.000', short: '10–15 JT' },
-      { id: 3, label: '15.000.001 – 20.000.000', short: '15–20 JT' },
-      { id: 4, label: '> 20.000.001', short: '>20 JT' },
-    ];
-    const VC_COLORS = ['#94a3b8', '#38bdf8', '#0ea5e9', '#2563eb', '#0B2F6B'];
-    const valueClassOf = (amt) => {
-      const a = Number(amt) || 0;
-      if (a <= 5000000) return 0;
-      if (a <= 10000000) return 1;
-      if (a <= 15000000) return 2;
-      if (a <= 20000000) return 3;
-      return 4;
-    };
-
-    // Agregat value WITH TAX per dealer × tahun × bulan
-    // Catatan: sengaja TIDAK filter bulan slicer di sini agar MoM (Mei vs Jun) tetap bisa
-    // saat user hanya memilih 1 bulan di slicer. Brand/DEPO/tahun/dealer tetap difilter.
-    const passRDNoMonth = (r) => {
-      if (r.depo === 'Unknown') return false;
-      if (!matchMulti(state.brand, r.brand)) return false;
-      if (!matchMulti(revDealerBrandFilter, r.brand)) return false;
-      if (!matchMulti(state.depo, r.depo)) return false;
-      if (!matchMulti(state.quartal, r.quartal)) return false;
-      if (!matchMulti(state.week, r.week)) return false;
-      if (!matchMulti(state.year, r.year)) return false;
-      return true;
-    };
-    let vcSrc = (DATA.dealer_grain || []).filter(passRDNoMonth);
-    if (hasDealerFilter) {
-      vcSrc = vcSrc.filter(r => matchMulti(dealerFilter, r.dealer || r.soldto));
-    }
-    const dealerMonthMap = new Map(); // key: year|month|name
-    for (const r of vcSrc) {
-      const name = r.dealer || r.soldto;
-      if (!name) continue;
-      const y = String(r.year || '');
-      const m = r.month;
-      if (!years.includes(y) || !m) continue;
-      const k = y + '|' + m + '|' + name;
-      if (!dealerMonthMap.has(k)) {
-        dealerMonthMap.set(k, {
-          name,
-          city: '',
-          year: y,
-          month: m,
-          amt: 0,       // Nett Amount WITH TAX (klasifikasi)
-          amtNet: 0,    // No Tax — hanya untuk rasio mix segment
-          qty: 0,
-          brands: Object.fromEntries(BRANDS.map(b => [b, 0])),
-          premHigh: 0,
-        });
-      }
-      const o = dealerMonthMap.get(k);
-      const amtNet = Number(r.amt) || 0;
-      // Khusus klasifikasi dealer value: Nett Amount WITH TAX
-      const useTax = Number.isFinite(Number(r.amt_tax)) ? Number(r.amt_tax) : amtNet;
-      const qty = Number(r.qty) || 0;
-      o.amt += useTax;
-      o.amtNet += amtNet;
-      o.qty += qty;
-      if (r.city) o.city = r.city;
-      const b = r.brand || 'OTHER';
-      if (o.brands[b] !== undefined) o.brands[b] += useTax;
-      if (Array.isArray(r.seg_items)) {
-        for (const it of r.seg_items) {
-          const sg = matchSegFocus(it.segment);
-          if (sg === 'PREMIUM' || sg === 'HIGH') o.premHigh += Number(it.amt) || 0;
-        }
-      }
-    }
-
-    // Index: year -> month -> Map(name -> record)
-    const byYM = { '2025': new Map(), '2026': new Map() };
-    for (const o of dealerMonthMap.values()) {
-      if (o.amt <= 0) continue;
-      o.cls = valueClassOf(o.amt); // bucket dari WITH TAX
-      o.ph = o.amtNet ? o.premHigh / o.amtNet : 0; // mix % dari no-tax (struktur segmen)
-      o.asp = o.qty ? o.amt / o.qty : 0; // ASP with tax
-      let topB = '—', topV = -1;
-      for (const [bn, bv] of Object.entries(o.brands)) {
-        if (bv > topV) { topV = bv; topB = bn; }
-      }
-      o.topBrand = topB;
-      o.topShare = o.amt ? topV / o.amt : 0;
-      if (!byYM[o.year]) byYM[o.year] = new Map();
-      if (!byYM[o.year].has(o.month)) byYM[o.year].set(o.month, new Map());
-      byYM[o.year].get(o.month).set(o.name, o);
-    }
-
-    // Semua bulan yang punya data (tanpa batasi filter — dipakai cari bulan prev MoM)
-    const vcMonthsAll = monthsOrd.filter(m =>
-      (byYM['2025']?.get(m)?.size || 0) + (byYM['2026']?.get(m)?.size || 0) > 0
-    );
-
-    // Hormati filter Bulan slicer untuk matrix / tren / fokus
-    const monthFilter = asArr(state.month);
-    const isMonthFiltered = !isAll(monthFilter);
-    // Bulan yang ditampilkan: ikut filter slicer (urutan kalender). MoM prev diambil dari luar set ini.
-    const vcMonthsView = isMonthFiltered
-      ? monthsOrd.filter(m => matchMulti(monthFilter, m))
-      : vcMonthsAll.slice();
-
-    const classCounts = (year, month) => {
-      const map = byYM[year]?.get(month);
-      const c = VC_DEFS.map(d => ({ id: d.id, label: d.label, short: d.short, n: 0, rev: 0, q: 0 }));
-      let total = 0, rev = 0, qty = 0;
-      if (map) {
-        for (const o of map.values()) {
-          c[o.cls].n += 1;
-          c[o.cls].rev += o.amt;
-          c[o.cls].q += o.qty;
-          total += 1;
-          rev += o.amt;
-          qty += o.qty;
-        }
-      }
-      return { c, total, rev, qty, map: map || new Map() };
-    };
-
-    // Snapshot per bulan — HANYA bulan yang lolos filter slicer
-    const vcMonthRows = vcMonthsView.map(m => {
-      const s25 = classCounts('2025', m);
-      const s26 = classCounts('2026', m);
-      return { month: m, s25, s26 };
-    });
-
-    // Bulan fokus: 1 bulan di slicer → pakai itu; multi → terakhir di set terfilter; kosong → terakhir overall
-    let vcFocusMonth = '';
-    if (monthFilter.length === 1) {
-      vcFocusMonth = String(monthFilter[0]);
-    } else if (vcMonthsView.length) {
-      const m26 = [...vcMonthsView].reverse().find(m => (byYM['2026']?.get(m)?.size || 0) > 0);
-      vcFocusMonth = m26 || vcMonthsView[vcMonthsView.length - 1];
-    } else if (vcMonthsAll.length) {
-      const m26 = [...vcMonthsAll].reverse().find(m => (byYM['2026']?.get(m)?.size || 0) > 0);
-      vcFocusMonth = m26 || vcMonthsAll[vcMonthsAll.length - 1];
-    }
-    const focus25 = vcFocusMonth ? classCounts('2025', vcFocusMonth) : { c: VC_DEFS.map(() => ({ n: 0, rev: 0 })), total: 0, rev: 0, qty: 0, map: new Map() };
-    const focus26 = vcFocusMonth ? classCounts('2026', vcFocusMonth) : { c: VC_DEFS.map(() => ({ n: 0, rev: 0 })), total: 0, rev: 0, qty: 0, map: new Map() };
-
-    // Tahun fokus untuk grafik MoM (tahun yang sama, bukan antar tahun)
-    const yearFilterArr = asArr(state.year);
-    let vcFocusYear = '2026';
-    if (yearFilterArr.length === 1 && years.includes(String(yearFilterArr[0]))) {
-      vcFocusYear = String(yearFilterArr[0]);
-    } else if (vcFocusMonth && (byYM['2026']?.get(vcFocusMonth)?.size || 0) > 0) {
-      vcFocusYear = '2026';
-    } else if (vcFocusMonth && (byYM['2025']?.get(vcFocusMonth)?.size || 0) > 0) {
-      vcFocusYear = '2025';
-    }
-    // Bulan sebelumnya di tahun yang sama (cari di kalender penuh, bukan hanya set terfilter)
-    // agar filter "Jun" tetap bisa bandingkan "Mei" untuk diagram MoM
-    let vcMomPrevMonth = '';
-    if (vcFocusMonth) {
-      const idxF = monthsOrd.indexOf(vcFocusMonth);
-      for (let i = idxF - 1; i >= 0; i--) {
-        const mPrev = monthsOrd[i];
-        if ((byYM[vcFocusYear]?.get(mPrev)?.size || 0) > 0) {
-          vcMomPrevMonth = mPrev;
-          break;
-        }
-      }
-    }
-    const emptyVcPack = { c: VC_DEFS.map(d => ({ id: d.id, label: d.label, short: d.short, n: 0, rev: 0, q: 0 })), total: 0, rev: 0, qty: 0, map: new Map() };
-    const focusCurY = vcFocusMonth ? classCounts(vcFocusYear, vcFocusMonth) : emptyVcPack;
-    const focusPrevY = vcMomPrevMonth ? classCounts(vcFocusYear, vcMomPrevMonth) : emptyVcPack;
-
-    // Rincian naik/turun kelas = MoM di tahun fokus (sesuai filter bulan yang dilihat)
-    // Contoh filter Jun 2026 → bandingkan Mei 2026 vs Jun 2026 — hanya 2 tabel
-    const momPrevMonth = vcMomPrevMonth || '';
-    let momUp = 0, momDown = 0, momStay = 0;
-    const momDownList = [];
-    const momUpList = [];
-    if (vcFocusMonth && momPrevMonth) {
-      const prev = classCounts(vcFocusYear, momPrevMonth);
-      const cur = focusCurY;
-      const names = new Set([...prev.map.keys(), ...cur.map.keys()]);
-      for (const name of names) {
-        const a = prev.map.get(name);
-        const b = cur.map.get(name);
-        if (!a || !b) continue;
-        const rec = {
-          name, city: b.city || a.city,
-          a25: a.amt, a26: b.amt, // prev vs cur (reuse field names)
-          q25: a.qty, q26: b.qty,
-          c25: a.cls, c26: b.cls,
-          yoy: a.amt ? (b.amt - a.amt) / a.amt : 0,
-          dAbs: b.amt - a.amt,
-          asp25: a.asp, asp26: b.asp,
-          ph25: a.ph, ph26: b.ph,
-          topName25: a.topBrand, topName26: b.topBrand,
-          brands25: a.brands, brands26: b.brands,
-        };
-        if (b.cls > a.cls) { momUp++; momUpList.push(rec); }
-        else if (b.cls < a.cls) { momDown++; momDownList.push(rec); }
-        else momStay++;
-      }
-      momUpList.sort((a, b) => b.dAbs - a.dAbs);
-      momDownList.sort((a, b) => a.dAbs - b.dAbs);
-    }
-
-    // Highlight single dealer: kelas per bulan (2026) + YoY bulan fokus
-    let focusClassNote = '';
-    if (singleDealer && vcFocusMonth) {
-      const a = focus25.map.get(singleDealer.name);
-      const b = focus26.map.get(singleDealer.name);
-      const lab25 = a ? VC_DEFS[a.cls].label : 'Tidak transaksi';
-      const lab26 = b ? VC_DEFS[b.cls].label : 'Tidak transaksi';
-      let move = 'STABIL di kelas yang sama';
-      if (!a && b) move = 'BARU di bulan ini vs tahun lalu';
-      else if (a && !b) move = 'HILANG transaksi di bulan ini vs tahun lalu';
-      else if (a && b && b.cls > a.cls) move = 'NAIK kelas value (YoY bulan sama)';
-      else if (a && b && b.cls < a.cls) move = 'TURUN kelas value (YoY bulan sama)';
-      // mini trail 2026 months
-      const trail = vcMonthsView.map(m => {
-        const o = byYM['2026']?.get(m)?.get(singleDealer.name);
-        return o ? `${m}:${VC_DEFS[o.cls].short}` : null;
-      }).filter(Boolean).slice(-6).join(' · ');
-      focusClassNote = `Dealer fokus <strong>${esc(singleDealer.name)}</strong> · ${vcFocusMonth}: 2025 <strong>${lab25}</strong> → 2026 <strong>${lab26}</strong> · ${move}.${trail ? `<br>Trail kelas 2026: ${trail}` : ''}`;
-    }
-
-    // Cards = kelas di bulan fokus (bukan full year)
-    const vcCardHtml = VC_DEFS.map((d, i) => {
-      const n25 = focus25.c[i]?.n || 0;
-      const n26 = focus26.c[i]?.n || 0;
-      const r25 = focus25.c[i]?.rev || 0;
-      const r26 = focus26.c[i]?.rev || 0;
-      const dn = n26 - n25;
-      const dr = r26 - r25;
-      const dCls = dn > 0 ? 'pos' : (dn < 0 ? 'neg' : '');
-      const rCls = dr > 0 ? 'pos' : (dr < 0 ? 'neg' : '');
-      return `<div class="rd-vc-card">
-        <div class="lab">${esc(d.label)}</div>
-        <div class="n">${n26} <span style="font-size:.72rem;color:#94a3b8;font-weight:800">dlr · ${esc(vcFocusMonth || '—')} 26</span></div>
-        <div class="meta">${esc(vcFocusMonth || '—')} 25: ${n25} · <span class="delta ${dCls}">${dn >= 0 ? '+' : ''}${dn}</span></div>
-        <div class="meta">With tax 26: ${fmtIDR(r26)}</div>
-        <div class="meta">vs 25: <span class="delta ${rCls}">${dr >= 0 ? '+' : ''}${fmtIDR(dr)}</span></div>
-      </div>`;
-    }).join('');
-
-    const maxVcN = Math.max(1, ...VC_DEFS.map((_, i) => Math.max(focus25.c[i]?.n || 0, focus26.c[i]?.n || 0)));
-    const vcBarHtml = VC_DEFS.map((d, i) => {
-      const n25 = focus25.c[i]?.n || 0;
-      const n26 = focus26.c[i]?.n || 0;
-      const p25 = (n25 / maxVcN) * 100;
-      const p26 = (n26 / maxVcN) * 100;
-      const dn = n26 - n25;
-      const dCls = dn > 0 ? 'pos' : (dn < 0 ? 'neg' : '');
-      return `<div class="rd-vc-bar-row">
-        <div title="${esc(d.label)}">${esc(d.short)}</div>
-        <div class="rd-vc-bar-track pair" title="Abu ${vcFocusMonth} 2025 · Biru ${vcFocusMonth} 2026">
-          <div class="slot end"><i class="y25" style="width:${Math.max(p25, n25 ? 4 : 0).toFixed(1)}%"></i></div>
-          <div class="slot"><i class="y26" style="width:${Math.max(p26, n26 ? 4 : 0).toFixed(1)}%"></i></div>
-        </div>
-        <div class="${dCls}">${n25}→${n26}</div>
-      </div>`;
-    }).join('');
-
-    // Tabel matrix semua bulan: jumlah dealer per kelas
-    const vcMatrixHead = `
-      <tr>
-        <th>Bulan</th>
-        <th class="n">Aktif 25</th>
-        <th class="n">Aktif 26</th>
-        ${VC_DEFS.map(d => `<th class="n">${esc(d.short)} 25</th><th class="n">${esc(d.short)} 26</th>`).join('')}
-      </tr>`;
-    const vcMatrixBody = vcMonthRows.map(r => {
-      const hi = r.month === vcFocusMonth ? ' style="background:#eef6ff"' : '';
-      return `<tr${hi}>
-        <td><strong>${esc(r.month)}</strong>${r.month === vcFocusMonth ? ' ●' : ''}</td>
-        <td class="n">${r.s25.total}</td>
-        <td class="n"><strong>${r.s26.total}</strong></td>
-        ${VC_DEFS.map((_, i) => {
-          const n25 = r.s25.c[i].n;
-          const n26 = r.s26.c[i].n;
-          const d = n26 - n25;
-          const cls = d > 0 ? 'pos' : (d < 0 ? 'neg' : '');
-          return `<td class="n">${n25}</td><td class="n ${cls}"><strong>${n26}</strong></td>`;
-        }).join('')}
-      </tr>`;
-    }).join('') || `<tr><td colspan="${3 + VC_DEFS.length * 2}" class="empty">Tidak ada data bulanan</td></tr>`;
-
-    const reasonCells = (r) => {
-      const reasons = [];
-      if (r.q25 && r.q26 < r.q25) reasons.push(`qty ${fmtPct((r.q26 - r.q25) / r.q25)}`);
-      else if (r.q25 && r.q26 > r.q25) reasons.push(`qty ${fmtPct((r.q26 - r.q25) / r.q25)}`);
-      if (r.asp25 && r.asp26 && r.asp26 < r.asp25 * 0.95) reasons.push(`ASP ${fmtPct((r.asp26 - r.asp25) / r.asp25)}`);
-      else if (r.asp25 && r.asp26 && r.asp26 > r.asp25 * 1.05) reasons.push(`ASP ${fmtPct((r.asp26 - r.asp25) / r.asp25)}`);
-      if ((r.ph26 || 0) + 0.001 < (r.ph25 || 0) - 0.02) reasons.push(`Prem+High ${fmtPct((r.ph26 || 0) - (r.ph25 || 0))}`);
-      else if ((r.ph26 || 0) > (r.ph25 || 0) + 0.02) reasons.push(`Prem+High ${fmtPct((r.ph26 || 0) - (r.ph25 || 0))}`);
-      if (r.topName25 && r.topName26 && r.topName25 !== r.topName26) reasons.push(`brand ${r.topName25}→${r.topName26}`);
-      if (!reasons.length) reasons.push(`value ${fmtPct(r.yoy)}`);
-      return reasons.join(' · ');
-    };
-
-    // Hanya 2 tabel rincian: turun & naik — berbasis filter bulan fokus (MoM tahun sama)
-    const mapMoveRow = (r, tone) => {
-      const from = r.c25 >= 0 ? VC_DEFS[r.c25].short : '—';
-      const to = r.c26 >= 0 ? VC_DEFS[r.c26].short : '—';
-      const pct = tone === 'neg'
-        ? `<td class="n neg">${fmtPct(r.yoy)}</td>`
-        : `<td class="n pos">${r.yoy >= 0 ? '+' : ''}${fmtPct(r.yoy)}</td>`;
-      return `<tr>
-        <td>${esc(r.name)}</td>
-        <td>${esc(r.city || '—')}</td>
-        <td class="n">${esc(from)}→${esc(to)}</td>
-        <td class="n">${fmtIDR(r.a25)}</td>
-        <td class="n">${fmtIDR(r.a26)}</td>
-        ${pct}
-        <td>${esc(reasonCells(r))}</td>
-      </tr>`;
-    };
-    const emptyMove = (msg) => `<tr><td colspan="7" class="empty">${esc(msg)}</td></tr>`;
-    const detailDownRows = momPrevMonth
-      ? (momDownList.map(r => mapMoveRow(r, 'neg')).join('')
-        || emptyMove(`Tidak ada dealer turun kelas · ${momPrevMonth}→${vcFocusMonth} ${vcFocusYear}`))
-      : emptyMove('Pilih / set fokus bulan yang punya bulan sebelumnya untuk rincian MoM');
-    const detailUpRows = momPrevMonth
-      ? (momUpList.map(r => mapMoveRow(r, 'pos')).join('')
-        || emptyMove(`Tidak ada dealer naik kelas · ${momPrevMonth}→${vcFocusMonth} ${vcFocusYear}`))
-      : emptyMove('Pilih / set fokus bulan yang punya bulan sebelumnya untuk rincian MoM');
 
     const deltaCls = (x) => (x > 0.005 ? 'pos' : (x < -0.005 ? 'neg' : ''));
 
@@ -5551,7 +5271,7 @@
         <div class="section-head">
           <div>
             <h3>Review Dealer · Meeting Pack</h3>
-            <p>Scorecard · Kelas Value · Market Share · Benchmark · Segment · ${esc(filterHint)}</p>
+            <p>Scorecard · Market Share · Benchmark · Segment · ${esc(filterHint)}</p>
           </div>
         </div>
         <div class="filter-row">
@@ -5593,105 +5313,14 @@
       <section class="section rd-tight">
         <div class="section-head">
           <div>
-            <h3>2. Klasifikasi Dealer by Value (Per Bulan)</h3>
-            <p><strong>Nett Amount With Tax</strong> · bucket per bulan · fokus: <strong>${esc(vcFocusMonth || '—')} ${esc(vcFocusYear || '')}</strong>${isMonthFiltered ? ' · filter Bulan: ' + esc(fmtMulti(monthFilter, 'Semua', 4)) : ' · semua bulan'}${vcMomPrevMonth ? ' · MoM vs ' + esc(vcMomPrevMonth) : ''}</p>
-          </div>
-        </div>
-        ${focusClassNote ? `<div class="cmp-insight">${focusClassNote}</div>` : ''}
-
-        <div class="rd-vc-grid">${vcCardHtml}</div>
-
-        <div class="section-head" style="margin-top:10px">
-          <div>
-            <h3 style="font-size:.88rem">Grafik sebaran kelas · MoM ${esc(vcFocusYear || '')}</h3>
-            <p>Pembanding <strong>bulan sebelumnya vs bulan fokus di tahun yang sama</strong> · With Tax${vcMomPrevMonth ? ' · ' + esc(vcMomPrevMonth) + ' vs ' + esc(vcFocusMonth || '—') + ' ' + esc(vcFocusYear) : ' · belum ada bulan pembanding'}</p>
-          </div>
-        </div>
-        <div class="rd-two-col">
-          <div class="chart-box chart-box-sm"><canvas id="cRdVcFocus"></canvas></div>
-          <div class="chart-box chart-box-sm"><canvas id="cRdVcDonut"></canvas></div>
-        </div>
-
-        <div class="section-head" style="margin-top:10px">
-          <div>
-            <h3 style="font-size:.88rem">Tren bulanan 2026 · stacked by kelas</h3>
-            <p>Tiap batang = total dealer aktif bulan itu · warna = kelas value (With Tax)</p>
-          </div>
-        </div>
-        <div class="chart-box chart-box-sm" style="height:240px !important"><canvas id="cRdVcTrend26"></canvas></div>
-
-        <div class="section-head" style="margin-top:10px">
-          <div>
-            <h3 style="font-size:.88rem">Tren bulanan 2025 · stacked by kelas</h3>
-            <p>Pembanding struktur kelas per bulan di 2025</p>
-          </div>
-        </div>
-        <div class="chart-box chart-box-sm" style="height:240px !important"><canvas id="cRdVcTrend25"></canvas></div>
-
-        <div class="section-head" style="margin-top:10px">
-          <div>
-            <h3 style="font-size:.88rem">Matrix detail · jml dealer per kelas / bulan</h3>
-            <p>With Tax · baris highlight = bulan fokus</p>
-          </div>
-        </div>
-        <div class="cmp-table-wrap" style="max-height:280px;overflow:auto">
-          <table class="cmp-tbl">
-            <thead>${vcMatrixHead}</thead>
-            <tbody>${vcMatrixBody}</tbody>
-          </table>
-        </div>
-
-        <div class="rd-kpi-grid" style="margin-top:10px">
-          <div class="rd-kpi"><div class="v">${focusCurY.total}</div><div class="l">Aktif ${esc(vcFocusMonth || '—')} ${esc(vcFocusYear)}</div><div class="s">With tax bulan fokus</div></div>
-          <div class="rd-kpi"><div class="v pos">${momUp}</div><div class="l">Naik Kelas</div><div class="s">${momPrevMonth ? esc(momPrevMonth) + '→' + esc(vcFocusMonth) : '—'} ${esc(vcFocusYear)}</div></div>
-          <div class="rd-kpi"><div class="v neg">${momDown}</div><div class="l">Turun Kelas</div><div class="s">${momPrevMonth ? esc(momPrevMonth) + '→' + esc(vcFocusMonth) : '—'} ${esc(vcFocusYear)}</div></div>
-          <div class="rd-kpi"><div class="v">${momStay}</div><div class="l">Stay Kelas</div><div class="s">kelas sama MoM</div></div>
-        </div>
-
-        <div class="section-head" style="margin-top:10px">
-          <div>
-            <h3 style="font-size:.88rem">Rincian dealer turun kelas · ${esc(momPrevMonth || '—')} → ${esc(vcFocusMonth || '—')} ${esc(vcFocusYear)}</h3>
-            <p>Hanya dealer yang turun bucket value (With Tax) · mengikuti filter Bulan fokus · MoM tahun sama</p>
-          </div>
-        </div>
-        <div class="cmp-table-wrap" style="max-height:280px;overflow:auto">
-          <table class="cmp-tbl">
-            <thead>
-              <tr>
-                <th>Dealer</th><th>Kota</th><th class="n">Kelas</th>
-                <th class="n">${esc(momPrevMonth || 'Prev')}</th><th class="n">${esc(vcFocusMonth || 'Fokus')}</th><th class="n">Δ%</th>
-                <th>Alasan data</th>
-              </tr>
-            </thead>
-            <tbody>${detailDownRows}</tbody>
-          </table>
-        </div>
-
-        <div class="section-head" style="margin-top:10px">
-          <div>
-            <h3 style="font-size:.88rem">Rincian dealer naik kelas · ${esc(momPrevMonth || '—')} → ${esc(vcFocusMonth || '—')} ${esc(vcFocusYear)}</h3>
-            <p>Hanya dealer yang naik bucket value (With Tax) · mengikuti filter Bulan fokus · MoM tahun sama</p>
-          </div>
-        </div>
-        <div class="cmp-table-wrap" style="max-height:280px;overflow:auto">
-          <table class="cmp-tbl">
-            <thead>
-              <tr>
-                <th>Dealer</th><th>Kota</th><th class="n">Kelas</th>
-                <th class="n">${esc(momPrevMonth || 'Prev')}</th><th class="n">${esc(vcFocusMonth || 'Fokus')}</th><th class="n">Δ%</th>
-                <th>Alasan data</th>
-              </tr>
-            </thead>
-            <tbody>${detailUpRows}</tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="section rd-tight">
-        <div class="section-head">
-          <div>
-            <h3>3. Market Share Brand (Value No Tax)</h3>
-            <p>Porsi 4 brand · share nilai 2026 · angka di chart</p>
+            <h3>2. Market Share Brand (Value No Tax)</h3>
+            <p>${hasDealerFilter
+              ? (focusList.length === 1
+                ? `Porsi 4 brand di dealer <strong>${esc(focus.name)}</strong>`
+                : `Porsi 4 brand di <strong>${fmtN(focusList.length)} dealer</strong> terfilter`)
+              : 'Porsi 4 brand di semua dealer (filter brand/DEPO/periode) · pilih Filter Dealer untuk fokus 1 dealer'}
+              · <strong>${esc(brandPeriodHint)}</strong>
+              · Total <strong>${fmtIDR(brandTotFiltered)}</strong></p>
           </div>
         </div>
         <div class="chart-box chart-box-sm"><canvas id="cRdBrandShare"></canvas></div>
@@ -5701,7 +5330,7 @@
       <section class="section rd-tight">
         <div class="section-head">
           <div>
-            <h3>4. Kontribusi Dealer di Kota yang Sama</h3>
+            <h3>3. Kontribusi Dealer di Kota yang Sama</h3>
             <p>${hasDealerFilter
               ? 'Per kota: % market kota (City of Customer) yang diisi dealer terfilter'
               : 'Per dealer top: % market kotanya · pilih Filter Dealer untuk fokus'}</p>
@@ -5742,7 +5371,7 @@
       <section class="section rd-tight">
         <div class="section-head">
           <div>
-            <h3>5. Benchmark Peer Se-Kota</h3>
+            <h3>4. Benchmark Peer Se-Kota</h3>
             <p>${cityOfFocus && cityOfFocus !== 'Unknown' ? 'Kota ' + esc(cityOfFocus) + ' · ' + peersInCity.length + ' dealer (filter brand/DEPO sama)' : 'Pilih dealer yang punya City of Customer'}</p>
           </div>
         </div>
@@ -5795,7 +5424,7 @@
       <section class="section rd-tight">
         <div class="section-head">
           <div>
-            <h3>6. Revenue per Bulan & Regularitas Order</h3>
+            <h3>5. Revenue per Bulan & Regularitas Order</h3>
             <p>Trend 2025 vs 2026 · deteksi bulan kosong & drop berturut</p>
           </div>
         </div>
@@ -5812,7 +5441,7 @@
       <section class="section rd-tight">
         <div class="section-head">
           <div>
-            <h3>7. Segment by Amount — Share %</h3>
+            <h3>6. Segment by Amount — Share %</h3>
             <p>8 segmen · % value · hover = nilai Rp · vs mix kota</p>
           </div>
         </div>
@@ -5854,7 +5483,7 @@
       <section class="section rd-tight">
         <div class="section-head">
           <div>
-            <h3>8. Segment by Quantity — Share % & ASP</h3>
+            <h3>7. Segment by Quantity — Share % & ASP</h3>
             <p>Bauran unit + harga rata-rata (Amount÷Qty) per segmen</p>
           </div>
         </div>
@@ -5996,11 +5625,6 @@
       },
     });
 
-    destroyChart('rdVcFocus');
-    destroyChart('rdVcDonut');
-    destroyChart('rdVcTrend26');
-    destroyChart('rdVcTrend25');
-    destroyChart('rdVcMigrate');
     destroyChart('rdBrandShare');
     destroyChart('rdDealerShare');
     destroyChart('rdCityShare');
@@ -6008,216 +5632,16 @@
     destroyChart('rdSegAmt');
     destroyChart('rdSegQty');
 
-    // ——— Charts klasifikasi value (With Tax, per bulan) ———
-    const vcLabels = VC_DEFS.map(d => d.short);
-    const vcCountLabel = {
-      color: '#0b1f3a',
-      font: { weight: '900', size: 10 },
-      anchor: 'end',
-      align: 'top',
-      clamp: true,
-      formatter: (v) => (v ? v : ''),
-    };
-    // Diagram 1: MoM tahun yang sama (contoh Mei 2026 vs Jun 2026), bukan YoY
-    const elVcFocus = document.getElementById('cRdVcFocus');
-    if (elVcFocus) {
-      const dsPrev = {
-        label: vcMomPrevMonth ? `${vcMomPrevMonth} ${vcFocusYear}` : 'Bulan sebelumnya',
-        data: VC_DEFS.map((_, i) => focusPrevY.c[i]?.n || 0),
-        backgroundColor: '#94a3b8',
-        borderRadius: 4,
-        maxBarThickness: 40,
-        categoryPercentage: 0.75,
-        barPercentage: 0.9,
-      };
-      const dsCur = {
-        label: `${vcFocusMonth || '—'} ${vcFocusYear}`,
-        data: VC_DEFS.map((_, i) => focusCurY.c[i]?.n || 0),
-        backgroundColor: '#1d4ed8',
-        borderRadius: 4,
-        maxBarThickness: 40,
-        categoryPercentage: 0.75,
-        barPercentage: 0.9,
-      };
-      charts.rdVcFocus = new Chart(elVcFocus, {
-        type: 'bar',
-        data: {
-          labels: vcLabels,
-          datasets: vcMomPrevMonth ? [dsPrev, dsCur] : [dsCur],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          layout: { padding: { top: 12 } },
-          plugins: {
-            legend: { labels: { color: '#334155', boxWidth: 10, font: { size: 11, weight: '800' } } },
-            datalabels: vcCountLabel,
-            title: {
-              display: true,
-              text: vcMomPrevMonth
-                ? `MoM ${vcFocusYear}: ${vcMomPrevMonth} vs ${vcFocusMonth} · WITH TAX`
-                : `Sebaran ${vcFocusMonth || '—'} ${vcFocusYear} · WITH TAX`,
-              color: '#0B2F6B',
-              font: { size: 11, weight: '800' },
-            },
-            tooltip: {
-              callbacks: {
-                label: (ctx) => {
-                  const i = ctx.dataIndex;
-                  const pack = (vcMomPrevMonth && ctx.datasetIndex === 0) ? focusPrevY : focusCurY;
-                  const n = pack.c[i]?.n || 0;
-                  const rev = pack.c[i]?.rev || 0;
-                  return ` ${ctx.dataset.label}: ${n} dealer · ${fmtIDR(rev)} (with tax)`;
-                },
-              },
-            },
-          },
-          scales: {
-            x: {
-              ticks: { color: '#334155', font: { weight: '800', size: 10 } },
-              grid: { display: false },
-            },
-            y: {
-              beginAtZero: true,
-              ticks: { color: '#5b6b82', font: { weight: '700', size: 10 }, precision: 0 },
-              grid: { color: 'rgba(148,163,184,.18)' },
-              title: { display: true, text: 'JML DEALER', color: '#5b6b82', font: { weight: '700', size: 10 } },
-            },
-          },
-        },
-      });
-    }
-
-    const elVcDonut = document.getElementById('cRdVcDonut');
-    if (elVcDonut) {
-      const donutData = VC_DEFS.map((_, i) => focusCurY.c[i]?.n || 0);
-      const donutTot = donutData.reduce((a, v) => a + v, 0);
-      charts.rdVcDonut = new Chart(elVcDonut, {
-        type: 'doughnut',
-        data: {
-          labels: vcLabels,
-          datasets: [{
-            data: donutData,
-            backgroundColor: VC_COLORS,
-            borderWidth: 2,
-            borderColor: '#fff',
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          cutout: '52%',
-          plugins: {
-            legend: {
-              position: 'bottom',
-              labels: { color: '#334155', boxWidth: 10, font: { size: 10, weight: '700' } },
-            },
-            datalabels: {
-              color: '#fff',
-              font: { weight: '900', size: 11 },
-              formatter: (v) => {
-                if (!v || !donutTot) return '';
-                const p = v / donutTot * 100;
-                return p >= 8 ? v + '\n' + p.toFixed(0) + '%' : '';
-              },
-              textAlign: 'center',
-            },
-            tooltip: {
-              callbacks: {
-                label: (ctx) => {
-                  const v = ctx.raw || 0;
-                  const p = donutTot ? (v / donutTot * 100).toFixed(1) : 0;
-                  const rev = focusCurY.c[ctx.dataIndex]?.rev || 0;
-                  return ` ${ctx.label}: ${v} dealer (${p}%) · ${fmtIDR(rev)}`;
-                },
-              },
-            },
-            title: {
-              display: true,
-              text: `${vcFocusMonth || '—'} ${vcFocusYear} · porsi dealer`,
-              color: '#0B2F6B',
-              font: { size: 12, weight: '800' },
-            },
-          },
-        },
-      });
-    }
-
-    const mkVcStacked = (year) => ({
-      type: 'bar',
-      data: {
-        labels: vcMonthsView.map(m => String(m).toUpperCase()),
-        datasets: VC_DEFS.map((d, i) => ({
-          label: d.short,
-          data: vcMonthsView.map(m => classCounts(year, m).c[i].n),
-          backgroundColor: VC_COLORS[i],
-          stack: 'vc' + year,
-          borderWidth: 0,
-          maxBarThickness: 42,
-        })),
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        layout: { padding: { top: 8 } },
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: { color: '#334155', boxWidth: 10, font: { size: 10, weight: '700' } },
-          },
-          datalabels: {
-            color: '#fff',
-            font: { weight: '900', size: 9 },
-            formatter: (v) => (v >= 3 ? v : ''),
-          },
-          tooltip: {
-            callbacks: {
-              footer: (items) => {
-                const tot = items.reduce((a, it) => a + (it.raw || 0), 0);
-                return 'Total dealer: ' + tot;
-              },
-              label: (ctx) => ` ${ctx.dataset.label}: ${ctx.raw || 0} dealer`,
-            },
-          },
-          title: {
-            display: true,
-            text: 'TAHUN ' + year + ' · WITH TAX',
-            color: '#0B2F6B',
-            font: { size: 11, weight: '800' },
-          },
-        },
-        scales: {
-          x: {
-            stacked: true,
-            ticks: { color: '#334155', font: { weight: '800', size: 10 } },
-            grid: { display: false },
-          },
-          y: {
-            stacked: true,
-            beginAtZero: true,
-            ticks: { color: '#5b6b82', font: { weight: '700', size: 10 }, precision: 0 },
-            grid: { color: 'rgba(148,163,184,.18)' },
-            title: { display: true, text: 'JML DEALER', color: '#5b6b82', font: { weight: '700', size: 10 } },
-          },
-        },
-      },
-    });
-    const elVc26 = document.getElementById('cRdVcTrend26');
-    if (elVc26) charts.rdVcTrend26 = new Chart(elVc26, mkVcStacked('2026'));
-    const elVc25 = document.getElementById('cRdVcTrend25');
-    if (elVc25) charts.rdVcTrend25 = new Chart(elVc25, mkVcStacked('2025'));
-
-    const brandTot26 = brandTot['2026'] || 0;
     const rankedBrands = BRANDS.slice().sort(
-      (a, b) => (brandYearAmt['2026'][b] || 0) - (brandYearAmt['2026'][a] || 0)
+      (a, b) => (brandAmtFiltered[b] || 0) - (brandAmtFiltered[a] || 0)
     );
     charts.rdBrandShare = new Chart(document.getElementById('cRdBrandShare'), {
       type: 'doughnut',
       data: {
         labels: rankedBrands,
         datasets: [{
-          data: rankedBrands.map(b => brandYearAmt['2026'][b] || 0),
-          backgroundColor: rankedBrands.map(b => COLORS[b]),
+          data: rankedBrands.map(b => brandAmtFiltered[b] || 0),
+          backgroundColor: rankedBrands.map(b => COLORS[b] || '#94a3b8'),
           borderWidth: 2,
           borderColor: '#fff',
         }],
@@ -6229,13 +5653,34 @@
         plugins: {
           legend: {
             position: 'bottom',
-            labels: { color: '#334155', boxWidth: 12, font: { size: 11, weight: '700' } },
+            labels: {
+              color: '#334155',
+              boxWidth: 12,
+              font: { size: 11, weight: '700' },
+              generateLabels: (chart) => {
+                const ds = chart.data.datasets[0] || {};
+                const total = brandTotFiltered || 0;
+                return (chart.data.labels || []).map((label, i) => {
+                  const v = Number(ds.data?.[i]) || 0;
+                  const p = total ? (v / total * 100) : 0;
+                  return {
+                    text: `${label}: ${fmtIDR(v)} (${p.toFixed(1)}%)`,
+                    fillStyle: (ds.backgroundColor || [])[i],
+                    strokeStyle: '#fff',
+                    lineWidth: 1,
+                    hidden: false,
+                    index: i,
+                  };
+                });
+              },
+            },
           },
           datalabels: {
             color: '#fff',
             font: { weight: '900', size: 11 },
             formatter: (v) => {
-              const p = brandTot26 ? (v / brandTot26 * 100) : 0;
+              const p = brandTotFiltered ? (v / brandTotFiltered * 100) : 0;
+              // Label: nilai singkat + % — total semua slice = brandTotFiltered (filter aktif)
               return p >= 6 ? fmtShort(v) + '\n' + p.toFixed(0) + '%' : '';
             },
             textAlign: 'center',
@@ -6246,10 +5691,17 @@
             callbacks: {
               label: (ctx) => {
                 const v = ctx.raw || 0;
-                const p = brandTot26 ? (v / brandTot26 * 100).toFixed(1) : 0;
+                const p = brandTotFiltered ? (v / brandTotFiltered * 100).toFixed(1) : 0;
                 return ` ${ctx.label}: ${fmtIDR(v)} (${p}%)`;
               },
+              footer: () => `Total filter: ${fmtIDR(brandTotFiltered)} · ${brandPeriodHint}`,
             },
+          },
+          title: {
+            display: true,
+            text: `Total ${fmtIDR(brandTotFiltered)} · ${brandPeriodHint}`,
+            color: '#0B2F6B',
+            font: { size: 12, weight: '800' },
           },
         },
       },
@@ -6708,6 +6160,359 @@
           </tbody>
         </table>`;
 
+
+    // ——— Klasifikasi Dealer by Value (dipindah dari Review Dealer) ———
+    const SEG_FOCUS_VC = ['PREMIUM', 'ULC', 'ENTRY', 'MID', 'MASS', 'HIGH', 'TABLET', 'ACCS'];
+    const matchSegFocus = (raw) => {
+      const u = String(raw || '').toUpperCase().trim();
+      if (!u) return null;
+      if (SEG_FOCUS_VC.includes(u)) return u;
+      if (u.startsWith('PREMIUM')) return 'PREMIUM';
+      if (u.startsWith('ULC')) return 'ULC';
+      if (u.startsWith('ENTRY')) return 'ENTRY';
+      if (u === 'MID' || u.startsWith('MID ')) return 'MID';
+      if (u.startsWith('MASS')) return 'MASS';
+      if (u === 'HIGH' || u.startsWith('HIGH ')) return 'HIGH';
+      if (u === 'TABLET' || (u.startsWith('TABLET') && !u.includes('ACCESS'))) return 'TABLET';
+      if (u === 'ACCS' || u === 'ACC') return 'ACCS';
+      return null;
+    };
+    const monthsOrd = (DATA.meta?.months || MONTHS).slice();
+    // years VC bucket (2025/2026) — beda dari years meta di atas
+    const yearsVC = ['2025', '2026'];
+    // Filter bulan/tahun: utamakan filter lokal Review Sales, fallback slicer global
+    const monthFilterSrc = !isAll(revSalesFilter.month) ? revSalesFilter.month
+      : (!isAll(state.month) ? state.month : []);
+    const yearFilterSrc = !isAll(revSalesFilter.year) ? revSalesFilter.year
+      : (!isAll(state.year) ? state.year : []);
+    // singleDealer optional: tidak dipakai di Review Sales (null)
+    const singleDealer = null;
+
+    // ——— Klasifikasi dealer by value PER BULAN · Nett Amount WITH TAX ———
+    const VC_DEFS = [
+      { id: 0, label: '0 – 5.000.000', short: '0–5 JT' },
+      { id: 1, label: '5.000.001 – 10.000.000', short: '5–10 JT' },
+      { id: 2, label: '10.000.001 – 15.000.000', short: '10–15 JT' },
+      { id: 3, label: '15.000.001 – 20.000.000', short: '15–20 JT' },
+      { id: 4, label: '> 20.000.001', short: '>20 JT' },
+    ];
+    const VC_COLORS = ['#94a3b8', '#38bdf8', '#0ea5e9', '#2563eb', '#0B2F6B'];
+    const valueClassOf = (amt) => {
+      const a = Number(amt) || 0;
+      if (a <= 5000000) return 0;
+      if (a <= 10000000) return 1;
+      if (a <= 15000000) return 2;
+      if (a <= 20000000) return 3;
+      return 4;
+    };
+
+    // Agregat value WITH TAX per dealer × tahun × bulan
+    // Catatan: sengaja TIDAK filter bulan slicer di sini agar MoM (Mei vs Jun) tetap bisa
+    // saat user hanya memilih 1 bulan di slicer. Brand/DEPO/tahun/dealer tetap difilter.
+    const passVCNoMonth = (r) => {
+      if (r.depo === 'Unknown') return false;
+      if (!matchMulti(state.brand, r.brand)) return false;
+      if (!matchMulti(state.depo, r.depo)) return false;
+      if (!matchMulti(state.quartal, r.quartal)) return false;
+      if (!matchMulti(state.week, r.week)) return false;
+      // Tahun: filter lokal Review Sales, fallback slicer global
+      if (!matchMulti(yearFilterSrc, r.year)) return false;
+      if (!matchMulti(revSalesFilter.sales, r.sales)) return false;
+      return true;
+    };
+    let vcSrc = (DATA.dealer_grain || []).filter(passVCNoMonth);
+    const dealerMonthMap = new Map(); // key: year|month|name
+    for (const r of vcSrc) {
+      const name = r.dealer || r.soldto;
+      if (!name) continue;
+      const y = String(r.year || '');
+      const m = r.month;
+      if (!yearsVC.includes(y) || !m) continue;
+      const k = y + '|' + m + '|' + name;
+      if (!dealerMonthMap.has(k)) {
+        dealerMonthMap.set(k, {
+          name,
+          city: '',
+          year: y,
+          month: m,
+          amt: 0,       // Nett Amount WITH TAX (klasifikasi)
+          amtNet: 0,    // No Tax — hanya untuk rasio mix segment
+          qty: 0,
+          brands: Object.fromEntries(BRANDS.map(b => [b, 0])),
+          premHigh: 0,
+        });
+      }
+      const o = dealerMonthMap.get(k);
+      const amtNet = Number(r.amt) || 0;
+      // Khusus klasifikasi dealer value: Nett Amount WITH TAX
+      const useTax = Number.isFinite(Number(r.amt_tax)) ? Number(r.amt_tax) : amtNet;
+      const qty = Number(r.qty) || 0;
+      o.amt += useTax;
+      o.amtNet += amtNet;
+      o.qty += qty;
+      if (r.city) o.city = r.city;
+      const b = r.brand || 'OTHER';
+      if (o.brands[b] !== undefined) o.brands[b] += useTax;
+      if (Array.isArray(r.seg_items)) {
+        for (const it of r.seg_items) {
+          const sg = matchSegFocus(it.segment);
+          if (sg === 'PREMIUM' || sg === 'HIGH') o.premHigh += Number(it.amt) || 0;
+        }
+      }
+    }
+
+    // Index: year -> month -> Map(name -> record)
+    const byYM = { '2025': new Map(), '2026': new Map() };
+    for (const o of dealerMonthMap.values()) {
+      if (o.amt <= 0) continue;
+      o.cls = valueClassOf(o.amt); // bucket dari WITH TAX
+      o.ph = o.amtNet ? o.premHigh / o.amtNet : 0; // mix % dari no-tax (struktur segmen)
+      o.asp = o.qty ? o.amt / o.qty : 0; // ASP with tax
+      let topB = '—', topV = -1;
+      for (const [bn, bv] of Object.entries(o.brands)) {
+        if (bv > topV) { topV = bv; topB = bn; }
+      }
+      o.topBrand = topB;
+      o.topShare = o.amt ? topV / o.amt : 0;
+      if (!byYM[o.year]) byYM[o.year] = new Map();
+      if (!byYM[o.year].has(o.month)) byYM[o.year].set(o.month, new Map());
+      byYM[o.year].get(o.month).set(o.name, o);
+    }
+
+    // Semua bulan yang punya data (tanpa batasi filter — dipakai cari bulan prev MoM)
+    const vcMonthsAll = monthsOrd.filter(m =>
+      (byYM['2025']?.get(m)?.size || 0) + (byYM['2026']?.get(m)?.size || 0) > 0
+    );
+
+    // Hormati filter Bulan slicer untuk matrix / tren / fokus
+    const monthFilter = asArr(monthFilterSrc);
+    const isMonthFiltered = !isAll(monthFilter);
+    // Bulan yang ditampilkan: ikut filter slicer (urutan kalender). MoM prev diambil dari luar set ini.
+    const vcMonthsView = isMonthFiltered
+      ? monthsOrd.filter(m => matchMulti(monthFilter, m))
+      : vcMonthsAll.slice();
+
+    const classCounts = (year, month) => {
+      const map = byYM[year]?.get(month);
+      const c = VC_DEFS.map(d => ({ id: d.id, label: d.label, short: d.short, n: 0, rev: 0, q: 0 }));
+      let total = 0, rev = 0, qty = 0;
+      if (map) {
+        for (const o of map.values()) {
+          c[o.cls].n += 1;
+          c[o.cls].rev += o.amt;
+          c[o.cls].q += o.qty;
+          total += 1;
+          rev += o.amt;
+          qty += o.qty;
+        }
+      }
+      return { c, total, rev, qty, map: map || new Map() };
+    };
+
+    // Snapshot per bulan — HANYA bulan yang lolos filter slicer
+    const vcMonthRows = vcMonthsView.map(m => {
+      const s25 = classCounts('2025', m);
+      const s26 = classCounts('2026', m);
+      return { month: m, s25, s26 };
+    });
+
+    // Bulan fokus: 1 bulan di slicer → pakai itu; multi → terakhir di set terfilter; kosong → terakhir overall
+    let vcFocusMonth = '';
+    if (monthFilter.length === 1) {
+      vcFocusMonth = String(monthFilter[0]);
+    } else if (vcMonthsView.length) {
+      const m26 = [...vcMonthsView].reverse().find(m => (byYM['2026']?.get(m)?.size || 0) > 0);
+      vcFocusMonth = m26 || vcMonthsView[vcMonthsView.length - 1];
+    } else if (vcMonthsAll.length) {
+      const m26 = [...vcMonthsAll].reverse().find(m => (byYM['2026']?.get(m)?.size || 0) > 0);
+      vcFocusMonth = m26 || vcMonthsAll[vcMonthsAll.length - 1];
+    }
+    const focus25 = vcFocusMonth ? classCounts('2025', vcFocusMonth) : { c: VC_DEFS.map(() => ({ n: 0, rev: 0 })), total: 0, rev: 0, qty: 0, map: new Map() };
+    const focus26 = vcFocusMonth ? classCounts('2026', vcFocusMonth) : { c: VC_DEFS.map(() => ({ n: 0, rev: 0 })), total: 0, rev: 0, qty: 0, map: new Map() };
+
+    // Tahun fokus untuk grafik MoM (tahun yang sama, bukan antar tahun)
+    const yearFilterArr = asArr(yearFilterSrc);
+    let vcFocusYear = '2026';
+    if (yearFilterArr.length === 1 && yearsVC.includes(String(yearFilterArr[0]))) {
+      vcFocusYear = String(yearFilterArr[0]);
+    } else if (vcFocusMonth && (byYM['2026']?.get(vcFocusMonth)?.size || 0) > 0) {
+      vcFocusYear = '2026';
+    } else if (vcFocusMonth && (byYM['2025']?.get(vcFocusMonth)?.size || 0) > 0) {
+      vcFocusYear = '2025';
+    }
+    // Bulan sebelumnya di tahun yang sama (cari di kalender penuh, bukan hanya set terfilter)
+    // agar filter "Jun" tetap bisa bandingkan "Mei" untuk diagram MoM
+    let vcMomPrevMonth = '';
+    if (vcFocusMonth) {
+      const idxF = monthsOrd.indexOf(vcFocusMonth);
+      for (let i = idxF - 1; i >= 0; i--) {
+        const mPrev = monthsOrd[i];
+        if ((byYM[vcFocusYear]?.get(mPrev)?.size || 0) > 0) {
+          vcMomPrevMonth = mPrev;
+          break;
+        }
+      }
+    }
+    const emptyVcPack = { c: VC_DEFS.map(d => ({ id: d.id, label: d.label, short: d.short, n: 0, rev: 0, q: 0 })), total: 0, rev: 0, qty: 0, map: new Map() };
+    const focusCurY = vcFocusMonth ? classCounts(vcFocusYear, vcFocusMonth) : emptyVcPack;
+    const focusPrevY = vcMomPrevMonth ? classCounts(vcFocusYear, vcMomPrevMonth) : emptyVcPack;
+
+    // Rincian naik/turun kelas = MoM di tahun fokus (sesuai filter bulan yang dilihat)
+    // Contoh filter Jun 2026 → bandingkan Mei 2026 vs Jun 2026 — hanya 2 tabel
+    const momPrevMonth = vcMomPrevMonth || '';
+    let momUp = 0, momDown = 0, momStay = 0;
+    const momDownList = [];
+    const momUpList = [];
+    if (vcFocusMonth && momPrevMonth) {
+      const prev = classCounts(vcFocusYear, momPrevMonth);
+      const cur = focusCurY;
+      const names = new Set([...prev.map.keys(), ...cur.map.keys()]);
+      for (const name of names) {
+        const a = prev.map.get(name);
+        const b = cur.map.get(name);
+        if (!a || !b) continue;
+        const rec = {
+          name, city: b.city || a.city,
+          a25: a.amt, a26: b.amt, // prev vs cur (reuse field names)
+          q25: a.qty, q26: b.qty,
+          c25: a.cls, c26: b.cls,
+          yoy: a.amt ? (b.amt - a.amt) / a.amt : 0,
+          dAbs: b.amt - a.amt,
+          asp25: a.asp, asp26: b.asp,
+          ph25: a.ph, ph26: b.ph,
+          topName25: a.topBrand, topName26: b.topBrand,
+          brands25: a.brands, brands26: b.brands,
+        };
+        if (b.cls > a.cls) { momUp++; momUpList.push(rec); }
+        else if (b.cls < a.cls) { momDown++; momDownList.push(rec); }
+        else momStay++;
+      }
+      momUpList.sort((a, b) => b.dAbs - a.dAbs);
+      momDownList.sort((a, b) => a.dAbs - b.dAbs);
+    }
+
+    // Highlight single dealer: kelas per bulan (2026) + YoY bulan fokus
+    let focusClassNote = '';
+    if (singleDealer && vcFocusMonth) {
+      const a = focus25.map.get(singleDealer.name);
+      const b = focus26.map.get(singleDealer.name);
+      const lab25 = a ? VC_DEFS[a.cls].label : 'Tidak transaksi';
+      const lab26 = b ? VC_DEFS[b.cls].label : 'Tidak transaksi';
+      let move = 'STABIL di kelas yang sama';
+      if (!a && b) move = 'BARU di bulan ini vs tahun lalu';
+      else if (a && !b) move = 'HILANG transaksi di bulan ini vs tahun lalu';
+      else if (a && b && b.cls > a.cls) move = 'NAIK kelas value (YoY bulan sama)';
+      else if (a && b && b.cls < a.cls) move = 'TURUN kelas value (YoY bulan sama)';
+      // mini trail 2026 months
+      const trail = vcMonthsView.map(m => {
+        const o = byYM['2026']?.get(m)?.get(singleDealer.name);
+        return o ? `${m}:${VC_DEFS[o.cls].short}` : null;
+      }).filter(Boolean).slice(-6).join(' · ');
+      focusClassNote = `Dealer fokus <strong>${esc(singleDealer.name)}</strong> · ${vcFocusMonth}: 2025 <strong>${lab25}</strong> → 2026 <strong>${lab26}</strong> · ${move}.${trail ? `<br>Trail kelas 2026: ${trail}` : ''}`;
+    }
+
+    // Cards = kelas di bulan fokus (bukan full year)
+    const vcCardHtml = VC_DEFS.map((d, i) => {
+      const n25 = focus25.c[i]?.n || 0;
+      const n26 = focus26.c[i]?.n || 0;
+      const r25 = focus25.c[i]?.rev || 0;
+      const r26 = focus26.c[i]?.rev || 0;
+      const dn = n26 - n25;
+      const dr = r26 - r25;
+      const dCls = dn > 0 ? 'pos' : (dn < 0 ? 'neg' : '');
+      const rCls = dr > 0 ? 'pos' : (dr < 0 ? 'neg' : '');
+      return `<div class="rd-vc-card">
+        <div class="lab">${esc(d.label)}</div>
+        <div class="n">${n26} <span style="font-size:.72rem;color:#94a3b8;font-weight:800">dlr · ${esc(vcFocusMonth || '—')} 26</span></div>
+        <div class="meta">${esc(vcFocusMonth || '—')} 25: ${n25} · <span class="delta ${dCls}">${dn >= 0 ? '+' : ''}${dn}</span></div>
+        <div class="meta">With tax 26: ${fmtIDR(r26)}</div>
+        <div class="meta">vs 25: <span class="delta ${rCls}">${dr >= 0 ? '+' : ''}${fmtIDR(dr)}</span></div>
+      </div>`;
+    }).join('');
+
+    const maxVcN = Math.max(1, ...VC_DEFS.map((_, i) => Math.max(focus25.c[i]?.n || 0, focus26.c[i]?.n || 0)));
+    const vcBarHtml = VC_DEFS.map((d, i) => {
+      const n25 = focus25.c[i]?.n || 0;
+      const n26 = focus26.c[i]?.n || 0;
+      const p25 = (n25 / maxVcN) * 100;
+      const p26 = (n26 / maxVcN) * 100;
+      const dn = n26 - n25;
+      const dCls = dn > 0 ? 'pos' : (dn < 0 ? 'neg' : '');
+      return `<div class="rd-vc-bar-row">
+        <div title="${esc(d.label)}">${esc(d.short)}</div>
+        <div class="rd-vc-bar-track pair" title="Abu ${vcFocusMonth} 2025 · Biru ${vcFocusMonth} 2026">
+          <div class="slot end"><i class="y25" style="width:${Math.max(p25, n25 ? 4 : 0).toFixed(1)}%"></i></div>
+          <div class="slot"><i class="y26" style="width:${Math.max(p26, n26 ? 4 : 0).toFixed(1)}%"></i></div>
+        </div>
+        <div class="${dCls}">${n25}→${n26}</div>
+      </div>`;
+    }).join('');
+
+    // Tabel matrix semua bulan: jumlah dealer per kelas
+    const vcMatrixHead = `
+      <tr>
+        <th>Bulan</th>
+        <th class="n">Aktif 25</th>
+        <th class="n">Aktif 26</th>
+        ${VC_DEFS.map(d => `<th class="n">${esc(d.short)} 25</th><th class="n">${esc(d.short)} 26</th>`).join('')}
+      </tr>`;
+    const vcMatrixBody = vcMonthRows.map(r => {
+      const hi = r.month === vcFocusMonth ? ' style="background:#eef6ff"' : '';
+      return `<tr${hi}>
+        <td><strong>${esc(r.month)}</strong>${r.month === vcFocusMonth ? ' ●' : ''}</td>
+        <td class="n">${r.s25.total}</td>
+        <td class="n"><strong>${r.s26.total}</strong></td>
+        ${VC_DEFS.map((_, i) => {
+          const n25 = r.s25.c[i].n;
+          const n26 = r.s26.c[i].n;
+          const d = n26 - n25;
+          const cls = d > 0 ? 'pos' : (d < 0 ? 'neg' : '');
+          return `<td class="n">${n25}</td><td class="n ${cls}"><strong>${n26}</strong></td>`;
+        }).join('')}
+      </tr>`;
+    }).join('') || `<tr><td colspan="${3 + VC_DEFS.length * 2}" class="empty">Tidak ada data bulanan</td></tr>`;
+
+    const reasonCells = (r) => {
+      const reasons = [];
+      if (r.q25 && r.q26 < r.q25) reasons.push(`qty ${fmtPct((r.q26 - r.q25) / r.q25)}`);
+      else if (r.q25 && r.q26 > r.q25) reasons.push(`qty ${fmtPct((r.q26 - r.q25) / r.q25)}`);
+      if (r.asp25 && r.asp26 && r.asp26 < r.asp25 * 0.95) reasons.push(`ASP ${fmtPct((r.asp26 - r.asp25) / r.asp25)}`);
+      else if (r.asp25 && r.asp26 && r.asp26 > r.asp25 * 1.05) reasons.push(`ASP ${fmtPct((r.asp26 - r.asp25) / r.asp25)}`);
+      if ((r.ph26 || 0) + 0.001 < (r.ph25 || 0) - 0.02) reasons.push(`Prem+High ${fmtPct((r.ph26 || 0) - (r.ph25 || 0))}`);
+      else if ((r.ph26 || 0) > (r.ph25 || 0) + 0.02) reasons.push(`Prem+High ${fmtPct((r.ph26 || 0) - (r.ph25 || 0))}`);
+      if (r.topName25 && r.topName26 && r.topName25 !== r.topName26) reasons.push(`brand ${r.topName25}→${r.topName26}`);
+      if (!reasons.length) reasons.push(`value ${fmtPct(r.yoy)}`);
+      return reasons.join(' · ');
+    };
+
+    // Hanya 2 tabel rincian: turun & naik — berbasis filter bulan fokus (MoM tahun sama)
+    const mapMoveRow = (r, tone) => {
+      const from = r.c25 >= 0 ? VC_DEFS[r.c25].short : '—';
+      const to = r.c26 >= 0 ? VC_DEFS[r.c26].short : '—';
+      const pct = tone === 'neg'
+        ? `<td class="n neg">${fmtPct(r.yoy)}</td>`
+        : `<td class="n pos">${r.yoy >= 0 ? '+' : ''}${fmtPct(r.yoy)}</td>`;
+      return `<tr>
+        <td>${esc(r.name)}</td>
+        <td>${esc(r.city || '—')}</td>
+        <td class="n">${esc(from)}→${esc(to)}</td>
+        <td class="n">${fmtIDR(r.a25)}</td>
+        <td class="n">${fmtIDR(r.a26)}</td>
+        ${pct}
+        <td>${esc(reasonCells(r))}</td>
+      </tr>`;
+    };
+    const emptyMove = (msg) => `<tr><td colspan="7" class="empty">${esc(msg)}</td></tr>`;
+    const detailDownRows = momPrevMonth
+      ? (momDownList.map(r => mapMoveRow(r, 'neg')).join('')
+        || emptyMove(`Tidak ada dealer turun kelas · ${momPrevMonth}→${vcFocusMonth} ${vcFocusYear}`))
+      : emptyMove('Pilih / set fokus bulan yang punya bulan sebelumnya untuk rincian MoM');
+    const detailUpRows = momPrevMonth
+      ? (momUpList.map(r => mapMoveRow(r, 'pos')).join('')
+        || emptyMove(`Tidak ada dealer naik kelas · ${momPrevMonth}→${vcFocusMonth} ${vcFocusYear}`))
+      : emptyMove('Pilih / set fokus bulan yang punya bulan sebelumnya untuk rincian MoM');
+
+
     el.innerHTML = `
       <section class="section">
         <div class="section-head">
@@ -6869,6 +6674,105 @@
         </div>
         <div class="chart-box"><canvas id="cRevSalesQvo"></canvas></div>
       </section>
+
+      <section class="section rd-tight">
+        <div class="section-head">
+          <div>
+            <h3>Klasifikasi Dealer by Value (Per Bulan)</h3>
+            <p><strong>Nett Amount With Tax</strong> · bucket per bulan · fokus: <strong>${esc(vcFocusMonth || '—')} ${esc(vcFocusYear || '')}</strong>${isMonthFiltered ? ' · filter Bulan: ' + esc(fmtMulti(monthFilter, 'Semua', 4)) : ' · semua bulan'}${vcMomPrevMonth ? ' · MoM vs ' + esc(vcMomPrevMonth) : ''} · Sales: <strong>${esc(salesLabel)}</strong></p>
+          </div>
+        </div>
+        ${focusClassNote ? `<div class="cmp-insight">${focusClassNote}</div>` : ''}
+
+        <div class="rd-vc-grid">${vcCardHtml}</div>
+
+        <div class="section-head" style="margin-top:10px">
+          <div>
+            <h3 style="font-size:.88rem">Grafik sebaran kelas · MoM ${esc(vcFocusYear || '')}</h3>
+            <p>Pembanding <strong>bulan sebelumnya vs bulan fokus di tahun yang sama</strong> · With Tax${vcMomPrevMonth ? ' · ' + esc(vcMomPrevMonth) + ' vs ' + esc(vcFocusMonth || '—') + ' ' + esc(vcFocusYear) : ' · belum ada bulan pembanding'}</p>
+          </div>
+        </div>
+        <div class="rd-two-col">
+          <div class="chart-box chart-box-sm"><canvas id="cRsVcFocus"></canvas></div>
+          <div class="chart-box chart-box-sm"><canvas id="cRsVcDonut"></canvas></div>
+        </div>
+
+        <div class="section-head" style="margin-top:10px">
+          <div>
+            <h3 style="font-size:.88rem">Tren bulanan 2026 · stacked by kelas</h3>
+            <p>Tiap batang = total dealer aktif bulan itu · warna = kelas value (With Tax)</p>
+          </div>
+        </div>
+        <div class="chart-box chart-box-sm" style="height:240px !important"><canvas id="cRsVcTrend26"></canvas></div>
+
+        <div class="section-head" style="margin-top:10px">
+          <div>
+            <h3 style="font-size:.88rem">Tren bulanan 2025 · stacked by kelas</h3>
+            <p>Pembanding struktur kelas per bulan di 2025</p>
+          </div>
+        </div>
+        <div class="chart-box chart-box-sm" style="height:240px !important"><canvas id="cRsVcTrend25"></canvas></div>
+
+        <div class="section-head" style="margin-top:10px">
+          <div>
+            <h3 style="font-size:.88rem">Matrix detail · jml dealer per kelas / bulan</h3>
+            <p>With Tax · baris highlight = bulan fokus</p>
+          </div>
+        </div>
+        <div class="cmp-table-wrap" style="max-height:280px;overflow:auto">
+          <table class="cmp-tbl">
+            <thead>${vcMatrixHead}</thead>
+            <tbody>${vcMatrixBody}</tbody>
+          </table>
+        </div>
+
+        <div class="rd-kpi-grid" style="margin-top:10px">
+          <div class="rd-kpi"><div class="v">${focusCurY.total}</div><div class="l">Aktif ${esc(vcFocusMonth || '—')} ${esc(vcFocusYear)}</div><div class="s">With tax bulan fokus</div></div>
+          <div class="rd-kpi"><div class="v pos">${momUp}</div><div class="l">Naik Kelas</div><div class="s">${momPrevMonth ? esc(momPrevMonth) + '→' + esc(vcFocusMonth) : '—'} ${esc(vcFocusYear)}</div></div>
+          <div class="rd-kpi"><div class="v neg">${momDown}</div><div class="l">Turun Kelas</div><div class="s">${momPrevMonth ? esc(momPrevMonth) + '→' + esc(vcFocusMonth) : '—'} ${esc(vcFocusYear)}</div></div>
+          <div class="rd-kpi"><div class="v">${momStay}</div><div class="l">Stay Kelas</div><div class="s">kelas sama MoM</div></div>
+        </div>
+
+        <div class="section-head" style="margin-top:10px">
+          <div>
+            <h3 style="font-size:.88rem">Rincian dealer turun kelas · ${esc(momPrevMonth || '—')} → ${esc(vcFocusMonth || '—')} ${esc(vcFocusYear)}</h3>
+            <p>Hanya dealer yang turun bucket value (With Tax) · mengikuti filter Bulan fokus · MoM tahun sama</p>
+          </div>
+        </div>
+        <div class="cmp-table-wrap" style="max-height:280px;overflow:auto">
+          <table class="cmp-tbl">
+            <thead>
+              <tr>
+                <th>Dealer</th><th>Kota</th><th class="n">Kelas</th>
+                <th class="n">${esc(momPrevMonth || 'Prev')}</th><th class="n">${esc(vcFocusMonth || 'Fokus')}</th><th class="n">Δ%</th>
+                <th>Alasan data</th>
+              </tr>
+            </thead>
+            <tbody>${detailDownRows}</tbody>
+          </table>
+        </div>
+
+        <div class="section-head" style="margin-top:10px">
+          <div>
+            <h3 style="font-size:.88rem">Rincian dealer naik kelas · ${esc(momPrevMonth || '—')} → ${esc(vcFocusMonth || '—')} ${esc(vcFocusYear)}</h3>
+            <p>Hanya dealer yang naik bucket value (With Tax) · mengikuti filter Bulan fokus · MoM tahun sama</p>
+          </div>
+        </div>
+        <div class="cmp-table-wrap" style="max-height:280px;overflow:auto">
+          <table class="cmp-tbl">
+            <thead>
+              <tr>
+                <th>Dealer</th><th>Kota</th><th class="n">Kelas</th>
+                <th class="n">${esc(momPrevMonth || 'Prev')}</th><th class="n">${esc(vcFocusMonth || 'Fokus')}</th><th class="n">Δ%</th>
+                <th>Alasan data</th>
+              </tr>
+            </thead>
+            <tbody>${detailUpRows}</tbody>
+          </table>
+        </div>
+      </section>
+
+
     `;
 
     const mkYearDs = (seriesMap, colors, asRevenue = false) => yearsUse.map(y => {
@@ -6960,6 +6864,10 @@
     destroyChart('revSalesRevenue');
     destroyChart('revSalesBo');
     destroyChart('revSalesQvo');
+    destroyChart('rsVcFocus');
+    destroyChart('rsVcDonut');
+    destroyChart('rsVcTrend26');
+    destroyChart('rsVcTrend25');
 
     const withClickablePoints = (datasets) => datasets.map(ds => ({
       ...ds,
@@ -6983,6 +6891,207 @@
       data: { labels: chartMonthLabels, datasets: withClickablePoints(mkYearDs(seriesQvo, yearColorsQvo, false)) },
       options: baseOpts('Jumlah Dealer QVO', false, 'QVO')
     });
+
+    // ——— Charts klasifikasi value (With Tax, per bulan) ———
+    const vcLabels = VC_DEFS.map(d => d.short);
+    const vcCountLabel = {
+      color: '#0b1f3a',
+      font: { weight: '900', size: 10 },
+      anchor: 'end',
+      align: 'top',
+      clamp: true,
+      formatter: (v) => (v ? v : ''),
+    };
+    // Diagram 1: MoM tahun yang sama (contoh Mei 2026 vs Jun 2026), bukan YoY
+    const elVcFocus = document.getElementById('cRsVcFocus');
+    if (elVcFocus) {
+      const dsPrev = {
+        label: vcMomPrevMonth ? `${vcMomPrevMonth} ${vcFocusYear}` : 'Bulan sebelumnya',
+        data: VC_DEFS.map((_, i) => focusPrevY.c[i]?.n || 0),
+        backgroundColor: '#94a3b8',
+        borderRadius: 4,
+        maxBarThickness: 40,
+        categoryPercentage: 0.75,
+        barPercentage: 0.9,
+      };
+      const dsCur = {
+        label: `${vcFocusMonth || '—'} ${vcFocusYear}`,
+        data: VC_DEFS.map((_, i) => focusCurY.c[i]?.n || 0),
+        backgroundColor: '#1d4ed8',
+        borderRadius: 4,
+        maxBarThickness: 40,
+        categoryPercentage: 0.75,
+        barPercentage: 0.9,
+      };
+      charts.rsVcFocus = new Chart(elVcFocus, {
+        type: 'bar',
+        data: {
+          labels: vcLabels,
+          datasets: vcMomPrevMonth ? [dsPrev, dsCur] : [dsCur],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 12 } },
+          plugins: {
+            legend: { labels: { color: '#334155', boxWidth: 10, font: { size: 11, weight: '800' } } },
+            datalabels: vcCountLabel,
+            title: {
+              display: true,
+              text: vcMomPrevMonth
+                ? `MoM ${vcFocusYear}: ${vcMomPrevMonth} vs ${vcFocusMonth} · WITH TAX`
+                : `Sebaran ${vcFocusMonth || '—'} ${vcFocusYear} · WITH TAX`,
+              color: '#0B2F6B',
+              font: { size: 11, weight: '800' },
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const i = ctx.dataIndex;
+                  const pack = (vcMomPrevMonth && ctx.datasetIndex === 0) ? focusPrevY : focusCurY;
+                  const n = pack.c[i]?.n || 0;
+                  const rev = pack.c[i]?.rev || 0;
+                  return ` ${ctx.dataset.label}: ${n} dealer · ${fmtIDR(rev)} (with tax)`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: {
+              ticks: { color: '#334155', font: { weight: '800', size: 10 } },
+              grid: { display: false },
+            },
+            y: {
+              beginAtZero: true,
+              ticks: { color: '#5b6b82', font: { weight: '700', size: 10 }, precision: 0 },
+              grid: { color: 'rgba(148,163,184,.18)' },
+              title: { display: true, text: 'JML DEALER', color: '#5b6b82', font: { weight: '700', size: 10 } },
+            },
+          },
+        },
+      });
+    }
+
+    const elVcDonut = document.getElementById('cRsVcDonut');
+    if (elVcDonut) {
+      const donutData = VC_DEFS.map((_, i) => focusCurY.c[i]?.n || 0);
+      const donutTot = donutData.reduce((a, v) => a + v, 0);
+      charts.rsVcDonut = new Chart(elVcDonut, {
+        type: 'doughnut',
+        data: {
+          labels: vcLabels,
+          datasets: [{
+            data: donutData,
+            backgroundColor: VC_COLORS,
+            borderWidth: 2,
+            borderColor: '#fff',
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '52%',
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { color: '#334155', boxWidth: 10, font: { size: 10, weight: '700' } },
+            },
+            datalabels: {
+              color: '#fff',
+              font: { weight: '900', size: 11 },
+              formatter: (v) => {
+                if (!v || !donutTot) return '';
+                const p = v / donutTot * 100;
+                return p >= 8 ? v + '\n' + p.toFixed(0) + '%' : '';
+              },
+              textAlign: 'center',
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const v = ctx.raw || 0;
+                  const p = donutTot ? (v / donutTot * 100).toFixed(1) : 0;
+                  const rev = focusCurY.c[ctx.dataIndex]?.rev || 0;
+                  return ` ${ctx.label}: ${v} dealer (${p}%) · ${fmtIDR(rev)}`;
+                },
+              },
+            },
+            title: {
+              display: true,
+              text: `${vcFocusMonth || '—'} ${vcFocusYear} · porsi dealer`,
+              color: '#0B2F6B',
+              font: { size: 12, weight: '800' },
+            },
+          },
+        },
+      });
+    }
+
+    const mkVcStacked = (year) => ({
+      type: 'bar',
+      data: {
+        labels: vcMonthsView.map(m => String(m).toUpperCase()),
+        datasets: VC_DEFS.map((d, i) => ({
+          label: d.short,
+          data: vcMonthsView.map(m => classCounts(year, m).c[i].n),
+          backgroundColor: VC_COLORS[i],
+          stack: 'vc' + year,
+          borderWidth: 0,
+          maxBarThickness: 42,
+        })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: { padding: { top: 8 } },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { color: '#334155', boxWidth: 10, font: { size: 10, weight: '700' } },
+          },
+          datalabels: {
+            color: '#fff',
+            font: { weight: '900', size: 9 },
+            formatter: (v) => (v >= 3 ? v : ''),
+          },
+          tooltip: {
+            callbacks: {
+              footer: (items) => {
+                const tot = items.reduce((a, it) => a + (it.raw || 0), 0);
+                return 'Total dealer: ' + tot;
+              },
+              label: (ctx) => ` ${ctx.dataset.label}: ${ctx.raw || 0} dealer`,
+            },
+          },
+          title: {
+            display: true,
+            text: 'TAHUN ' + year + ' · WITH TAX',
+            color: '#0B2F6B',
+            font: { size: 11, weight: '800' },
+          },
+        },
+        scales: {
+          x: {
+            stacked: true,
+            ticks: { color: '#334155', font: { weight: '800', size: 10 } },
+            grid: { display: false },
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            ticks: { color: '#5b6b82', font: { weight: '700', size: 10 }, precision: 0 },
+            grid: { color: 'rgba(148,163,184,.18)' },
+            title: { display: true, text: 'JML DEALER', color: '#5b6b82', font: { weight: '700', size: 10 } },
+          },
+        },
+      },
+    });
+    const elVc26 = document.getElementById('cRsVcTrend26');
+    if (elVc26) charts.rsVcTrend26 = new Chart(elVc26, mkVcStacked('2026'));
+    const elVc25 = document.getElementById('cRsVcTrend25');
+    if (elVc25) charts.rsVcTrend25 = new Chart(elVc25, mkVcStacked('2025'));
+
+
 
     mountMultiSelect(document.getElementById('revSalesName'), {
       options: allSalesNames,
