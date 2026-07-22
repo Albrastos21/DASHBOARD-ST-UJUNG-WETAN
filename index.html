@@ -7,16 +7,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>DASHBOARD UJUNG WETAN · HP v12</title>
+  <title>DASHBOARD UJUNG WETAN · HP v13</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- Default data URL (GitHub Pages). Opsional: config.js di root bisa menimpa ini. -->
   <script>
     window.DASHBOARD_CONFIG = window.DASHBOARD_CONFIG || { dataUrl: 'data.json.gz' };
     // Versi UI — ganti angka ini setiap rilis agar cache browser/HP ikut refresh
-    window.DASHBOARD_UI_VERSION = '12';
+    window.DASHBOARD_UI_VERSION = '13';
   </script>
-  <script src="config.js?v=12" onerror="/* config.js opsional — 404 diabaikan */"></script>
+  <script src="config.js?v=13" onerror="/* config.js opsional — 404 diabaikan */"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <style>
@@ -183,12 +183,12 @@
     .brand-block img.logo {
       height: 56px; width: auto; max-width: min(240px, 48vw);
       object-fit: contain; flex-shrink: 0;
-      background: linear-gradient(135deg, #faf5ff 0%, #eff6ff 50%, #ecfeff 100%);
-      border-radius: 14px; padding: 5px 8px;
-      border: 1px solid #c4b5fd;
+      background: #000000;
+      border-radius: 14px; padding: 6px 10px;
+      border: 1px solid #1e293b;
       box-shadow:
-        0 4px 14px rgba(124, 58, 237, 0.18),
-        0 1px 0 rgba(255,255,255,.8) inset;
+        0 4px 14px rgba(11, 47, 107, 0.22),
+        0 1px 0 rgba(255,255,255,.12) inset;
     }
     .brand-block h1 {
       font-size: clamp(.9rem, 3.2vw, 1.18rem);
@@ -1207,7 +1207,7 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand-block">
-        <img class="logo" src="logo-reborn.svg?v=2" alt="Logo REBORN" />
+        <img class="logo" src="logo-tam.jpg?v=13" alt="Logo TAM · member of erajaya group" />
         <div>
           <h1>DASHBOARD UJUNG WETAN</h1>
           <p id="subHead">PT TELETAMA ARTHA MANDIRI</p>
@@ -5838,18 +5838,6 @@
     const el = document.getElementById('page-review-sales');
     if (!el) return;
 
-    // Base filter: tanpa bulan lokal (untuk tools banding + grafik)
-    const passBase = (r) => {
-      if (r.depo === 'Unknown') return false;
-      if (!matchMulti(state.brand, r.brand)) return false;
-      if (!matchMulti(state.depo, r.depo)) return false;
-      if (!matchMulti(state.quartal, r.quartal)) return false;
-      if (!matchMulti(state.week, r.week)) return false;
-      if (!matchMulti(revSalesFilter.year, r.year)) return false;
-      if (!matchMulti(revSalesFilter.sales, r.sales)) return false;
-      return true;
-    };
-
     const allSalesNames = [...new Set((DATA.grain || []).map(r => r.sales).filter(Boolean))]
       .filter(s => s !== 'Unknown')
       .sort((a, b) => a.localeCompare(b, 'id'));
@@ -5861,18 +5849,36 @@
     revSalesFilter.month = asArr(revSalesFilter.month);
     revSalesFilter.vcClass = asArr(revSalesFilter.vcClass).filter(v => ['0', '1', '2', '3', '4'].includes(String(v)));
 
+    // Filter efektif Review Sales: lokal diutamakan, fallback ke slicer global.
+    // Dipakai Achievement charts + Klasifikasi Dealer by Value agar selalu selaras.
+    const rsEffSales = asArr(revSalesFilter.sales);
+    const rsEffYear = !isAll(revSalesFilter.year) ? asArr(revSalesFilter.year) : asArr(state.year);
+    const rsEffMonth = !isAll(revSalesFilter.month) ? asArr(revSalesFilter.month) : asArr(state.month);
+
+    // Base filter: tanpa bulan (untuk tools banding + MoM). Tahun/sales ikut filter efektif.
+    const passBase = (r) => {
+      if (r.depo === 'Unknown') return false;
+      if (!matchMulti(state.brand, r.brand)) return false;
+      if (!matchMulti(state.depo, r.depo)) return false;
+      if (!matchMulti(state.quartal, r.quartal)) return false;
+      if (!matchMulti(state.week, r.week)) return false;
+      if (!matchMulti(rsEffYear, r.year)) return false;
+      if (!matchMulti(rsEffSales, r.sales)) return false;
+      return true;
+    };
+
     const baseGrain = (DATA.grain || []).filter(passBase);
     const baseDealer = (DATA.dealer_grain || []).filter(passBase);
-    const grainRows = baseGrain.filter(r => matchMulti(revSalesFilter.month, r.month));
-    const dealerRows = baseDealer.filter(r => matchMulti(revSalesFilter.month, r.month));
+    const grainRows = baseGrain.filter(r => matchMulti(rsEffMonth, r.month));
+    const dealerRows = baseDealer.filter(r => matchMulti(rsEffMonth, r.month));
 
     let monthLabels = [...new Set(baseGrain.map(r => r.month).filter(Boolean))]
       .sort((a, b) => monthKey(a) - monthKey(b));
     if (!monthLabels.length) monthLabels = monthsMeta.slice();
 
     const yearsInData = [...new Set(baseGrain.map(r => String(r.year || '')).filter(Boolean))].sort();
-    const yearsUse = !isAll(revSalesFilter.year)
-      ? revSalesFilter.year.map(String)
+    const yearsUse = !isAll(rsEffYear)
+      ? rsEffYear.map(String)
       : (yearsInData.length ? yearsInData : years);
 
     if (!revCompare.focusYear || !yearsUse.includes(revCompare.focusYear)) {
@@ -6067,8 +6073,8 @@
       dm.set(name, (dm.get(name) || 0) + (Number(r.amt) || 0));
     }
 
-    const chartMonths = !isAll(revSalesFilter.month)
-      ? monthLabels.filter(m => matchMulti(revSalesFilter.month, m))
+    const chartMonths = !isAll(rsEffMonth)
+      ? monthLabels.filter(m => matchMulti(rsEffMonth, m))
       : monthLabels;
     const chartMonthLabels = chartMonths.length ? chartMonths : monthLabels;
 
@@ -6181,11 +6187,10 @@
     const monthsOrd = (DATA.meta?.months || MONTHS).slice();
     // years VC bucket (2025/2026) — beda dari years meta di atas
     const yearsVC = ['2025', '2026'];
-    // Filter bulan/tahun: utamakan filter lokal Review Sales, fallback slicer global
-    const monthFilterSrc = !isAll(revSalesFilter.month) ? revSalesFilter.month
-      : (!isAll(state.month) ? state.month : []);
-    const yearFilterSrc = !isAll(revSalesFilter.year) ? revSalesFilter.year
-      : (!isAll(state.year) ? state.year : []);
+    // Filter terikat ke filter di atas (Sales / Tahun / Bulan) — sama dengan Achievement
+    const monthFilterSrc = rsEffMonth;
+    const yearFilterSrc = rsEffYear;
+    const salesFilterSrc = rsEffSales;
     // singleDealer optional: tidak dipakai di Review Sales (null)
     const singleDealer = null;
 
@@ -6208,17 +6213,16 @@
     };
 
     // Agregat value WITH TAX per dealer × tahun × bulan
-    // Catatan: sengaja TIDAK filter bulan slicer di sini agar MoM (Mei vs Jun) tetap bisa
-    // saat user hanya memilih 1 bulan di slicer. Brand/DEPO/tahun/dealer tetap difilter.
+    // Bulan sengaja tidak difilter di sini agar MoM (Mei vs Jun) tetap bisa
+    // saat user hanya memilih 1 bulan. Sales/tahun/brand/DEPO tetap terikat filter atas.
     const passVCNoMonth = (r) => {
       if (r.depo === 'Unknown') return false;
       if (!matchMulti(state.brand, r.brand)) return false;
       if (!matchMulti(state.depo, r.depo)) return false;
       if (!matchMulti(state.quartal, r.quartal)) return false;
       if (!matchMulti(state.week, r.week)) return false;
-      // Tahun: filter lokal Review Sales, fallback slicer global
       if (!matchMulti(yearFilterSrc, r.year)) return false;
-      if (!matchMulti(revSalesFilter.sales, r.sales)) return false;
+      if (!matchMulti(salesFilterSrc, r.sales)) return false;
       return true;
     };
     let vcSrc = (DATA.dealer_grain || []).filter(passVCNoMonth);
@@ -6292,10 +6296,10 @@
       (byYM['2025']?.get(m)?.size || 0) + (byYM['2026']?.get(m)?.size || 0) > 0
     );
 
-    // Hormati filter Bulan slicer untuk matrix / tren / fokus
+    // Hormati filter Bulan (Review Sales / slicer) untuk matrix / tren / fokus
     const monthFilter = asArr(monthFilterSrc);
     const isMonthFiltered = !isAll(monthFilter);
-    // Bulan yang ditampilkan: ikut filter slicer (urutan kalender). MoM prev diambil dari luar set ini.
+    // Bulan yang ditampilkan: ikut filter di atas (urutan kalender)
     const vcMonthsView = isMonthFiltered
       ? monthsOrd.filter(m => matchMulti(monthFilter, m))
       : vcMonthsAll.slice();
@@ -6320,47 +6324,56 @@
       return { c, total, rev, qty, map: filteredMap };
     };
 
-    // Snapshot per bulan — HANYA bulan yang lolos filter slicer
+    // Snapshot per bulan — HANYA bulan yang lolos filter di atas
     const vcMonthRows = vcMonthsView.map(m => {
       const s25 = classCounts('2025', m);
       const s26 = classCounts('2026', m);
       return { month: m, s25, s26 };
     });
 
-    // Bulan fokus: 1 bulan di slicer → pakai itu; multi → terakhir di set terfilter; kosong → terakhir overall
-    let vcFocusMonth = '';
-    if (monthFilter.length === 1) {
-      vcFocusMonth = String(monthFilter[0]);
-    } else if (vcMonthsView.length) {
-      const m26 = [...vcMonthsView].reverse().find(m => (byYM['2026']?.get(m)?.size || 0) > 0);
-      vcFocusMonth = m26 || vcMonthsView[vcMonthsView.length - 1];
-    } else if (vcMonthsAll.length) {
-      const m26 = [...vcMonthsAll].reverse().find(m => (byYM['2026']?.get(m)?.size || 0) > 0);
-      vcFocusMonth = m26 || vcMonthsAll[vcMonthsAll.length - 1];
-    }
-    const focus25 = vcFocusMonth ? classCounts('2025', vcFocusMonth) : { c: VC_DEFS.map(() => ({ n: 0, rev: 0 })), total: 0, rev: 0, qty: 0, map: new Map() };
-    const focus26 = vcFocusMonth ? classCounts('2026', vcFocusMonth) : { c: VC_DEFS.map(() => ({ n: 0, rev: 0 })), total: 0, rev: 0, qty: 0, map: new Map() };
-
     // Tahun fokus untuk grafik MoM (tahun yang sama, bukan antar tahun)
     const yearFilterArr = asArr(yearFilterSrc);
     let vcFocusYear = '2026';
     if (yearFilterArr.length === 1 && yearsVC.includes(String(yearFilterArr[0]))) {
       vcFocusYear = String(yearFilterArr[0]);
-    } else if (vcFocusMonth && (byYM['2026']?.get(vcFocusMonth)?.size || 0) > 0) {
+    } else if (yearsUse.includes('2026')) {
       vcFocusYear = '2026';
-    } else if (vcFocusMonth && (byYM['2025']?.get(vcFocusMonth)?.size || 0) > 0) {
+    } else if (yearsUse.includes('2025')) {
       vcFocusYear = '2025';
     }
-    // Bulan sebelumnya di tahun yang sama (cari di kalender penuh, bukan hanya set terfilter)
-    // agar filter "Jun" tetap bisa bandingkan "Mei" untuk diagram MoM
+
+    // Bulan fokus: 1 bulan → itu; multi (mis. Jun+Jul) → terakhir di set terfilter; kosong → terakhir overall
+    let vcFocusMonth = '';
+    if (monthFilter.length === 1) {
+      vcFocusMonth = String(monthFilter[0]);
+    } else if (vcMonthsView.length) {
+      const mY = [...vcMonthsView].reverse().find(m => (byYM[vcFocusYear]?.get(m)?.size || 0) > 0);
+      vcFocusMonth = mY || vcMonthsView[vcMonthsView.length - 1];
+    } else if (vcMonthsAll.length) {
+      const mY = [...vcMonthsAll].reverse().find(m => (byYM[vcFocusYear]?.get(m)?.size || 0) > 0);
+      vcFocusMonth = mY || vcMonthsAll[vcMonthsAll.length - 1];
+    }
+    const focus25 = vcFocusMonth ? classCounts('2025', vcFocusMonth) : { c: VC_DEFS.map(() => ({ n: 0, rev: 0 })), total: 0, rev: 0, qty: 0, map: new Map() };
+    const focus26 = vcFocusMonth ? classCounts('2026', vcFocusMonth) : { c: VC_DEFS.map(() => ({ n: 0, rev: 0 })), total: 0, rev: 0, qty: 0, map: new Map() };
+
+    // Bulan pembanding MoM:
+    // - multi-bulan terpilih (Jun+Jul) → pakai bulan sebelumnya di DALAM set filter
+    // - 1 bulan (Jul) → ambil bulan kalender sebelumnya (Jun) agar MoM tetap jalan
     let vcMomPrevMonth = '';
     if (vcFocusMonth) {
-      const idxF = monthsOrd.indexOf(vcFocusMonth);
-      for (let i = idxF - 1; i >= 0; i--) {
-        const mPrev = monthsOrd[i];
-        if ((byYM[vcFocusYear]?.get(mPrev)?.size || 0) > 0) {
-          vcMomPrevMonth = mPrev;
-          break;
+      if (isMonthFiltered && vcMonthsView.length >= 2) {
+        const idxInView = vcMonthsView.indexOf(vcFocusMonth);
+        if (idxInView > 0) vcMomPrevMonth = vcMonthsView[idxInView - 1];
+        else if (vcMonthsView.length >= 2) vcMomPrevMonth = vcMonthsView[vcMonthsView.length - 2];
+      }
+      if (!vcMomPrevMonth) {
+        const idxF = monthsOrd.indexOf(vcFocusMonth);
+        for (let i = idxF - 1; i >= 0; i--) {
+          const mPrev = monthsOrd[i];
+          if ((byYM[vcFocusYear]?.get(mPrev)?.size || 0) > 0) {
+            vcMomPrevMonth = mPrev;
+            break;
+          }
         }
       }
     }
@@ -6692,8 +6705,14 @@
         <div class="section-head">
           <div>
             <h3>Klasifikasi Dealer by Value (Per Bulan)</h3>
-            <p><strong>Nett Amount With Tax</strong> · bucket per bulan · fokus: <strong>${esc(vcFocusMonth || '—')} ${esc(vcFocusYear || '')}</strong>${isMonthFiltered ? ' · filter Bulan: ' + esc(fmtMulti(monthFilter, 'Semua', 4)) : ' · semua bulan'}${vcMomPrevMonth ? ' · MoM vs ' + esc(vcMomPrevMonth) : ''} · Sales: <strong>${esc(salesLabel)}</strong> · Kelas: <strong>${esc(vcClassHint)}</strong></p>
+            <p><strong>Nett Amount With Tax</strong> · bucket per bulan · fokus: <strong>${esc(vcFocusMonth || '—')} ${esc(vcFocusYear || '')}</strong>${vcMomPrevMonth ? ' · MoM vs ' + esc(vcMomPrevMonth) : ''} · Kelas: <strong>${esc(vcClassHint)}</strong></p>
           </div>
+        </div>
+        <div class="cmp-insight" style="margin-bottom:8px">
+          Terikat filter di atas · Sales: <strong>${esc(salesLabel)}</strong>
+          · Tahun: <strong>${esc(fmtMulti(yearFilterSrc, 'Semua Tahun', 4))}</strong>
+          · Bulan: <strong>${esc(isMonthFiltered ? fmtMulti(monthFilter, 'Semua', 6) : 'Semua Bulan')}</strong>
+          ${isMonthFiltered ? ' · matrix/tren hanya menampilkan bulan terpilih' : ''}
         </div>
         <div class="filter-row" style="margin-bottom:8px">
           <div class="field">
@@ -6717,26 +6736,28 @@
           <div class="chart-box chart-box-sm"><canvas id="cRsVcDonut"></canvas></div>
         </div>
 
+        ${yearsUse.includes('2026') ? `
         <div class="section-head" style="margin-top:10px">
           <div>
             <h3 style="font-size:.88rem">Tren bulanan 2026 · stacked by kelas</h3>
-            <p>Tiap batang = total dealer aktif bulan itu · warna = kelas value (With Tax)</p>
+            <p>Tiap batang = total dealer aktif bulan itu · warna = kelas value (With Tax)${isMonthFiltered ? ' · bulan: ' + esc(fmtMulti(monthFilter, 'Semua', 6)) : ''}</p>
           </div>
         </div>
-        <div class="chart-box chart-box-sm" style="height:240px !important"><canvas id="cRsVcTrend26"></canvas></div>
+        <div class="chart-box chart-box-sm" style="height:240px !important"><canvas id="cRsVcTrend26"></canvas></div>` : ''}
 
+        ${yearsUse.includes('2025') ? `
         <div class="section-head" style="margin-top:10px">
           <div>
             <h3 style="font-size:.88rem">Tren bulanan 2025 · stacked by kelas</h3>
-            <p>Pembanding struktur kelas per bulan di 2025</p>
+            <p>Pembanding struktur kelas per bulan di 2025${isMonthFiltered ? ' · bulan: ' + esc(fmtMulti(monthFilter, 'Semua', 6)) : ''}</p>
           </div>
         </div>
-        <div class="chart-box chart-box-sm" style="height:240px !important"><canvas id="cRsVcTrend25"></canvas></div>
+        <div class="chart-box chart-box-sm" style="height:240px !important"><canvas id="cRsVcTrend25"></canvas></div>` : ''}
 
         <div class="section-head" style="margin-top:10px">
           <div>
             <h3 style="font-size:.88rem">Matrix detail · jml dealer per kelas / bulan</h3>
-            <p>With Tax · baris highlight = bulan fokus</p>
+            <p>With Tax · baris highlight = bulan fokus${isMonthFiltered ? ' · hanya ' + esc(fmtMulti(monthFilter, 'Semua', 6)) : ''}</p>
           </div>
         </div>
         <div class="cmp-table-wrap" style="max-height:280px;overflow:auto">
