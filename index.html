@@ -14,9 +14,9 @@
   <script>
     window.DASHBOARD_CONFIG = window.DASHBOARD_CONFIG || { dataUrl: 'data.json.gz' };
     // Versi UI — ganti angka ini setiap rilis agar cache browser/HP ikut refresh
-    window.DASHBOARD_UI_VERSION = '13';
+    window.DASHBOARD_UI_VERSION = '14';
   </script>
-  <script src="config.js?v=13" onerror="/* config.js opsional — 404 diabaikan */"></script>
+  <script src="config.js?v=14" onerror="/* config.js opsional — 404 diabaikan */"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <style>
@@ -1207,7 +1207,7 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand-block">
-        <img class="logo" src="logo-tam.jpg?v=13" alt="Logo TAM · member of erajaya group" />
+        <img class="logo" src="logo-tam.jpg?v=14" alt="Logo TAM · member of erajaya group" />
         <div>
           <h1>DASHBOARD UJUNG WETAN</h1>
           <p id="subHead">PT TELETAMA ARTHA MANDIRI</p>
@@ -1220,6 +1220,19 @@
     </div>
   </header>
 
+  <!-- Di luar #app supaya tidak ikut terhapus saat buildUI() mengganti innerHTML -->
+  <nav class="bottom-nav" id="bottomNav">
+    <div class="bottom-nav-inner">
+      <button class="nav-btn on" data-page="overview" type="button"><span class="ico">🏠</span>Ringkas</button>
+      <button class="nav-btn" data-page="brands" type="button"><span class="ico">📊</span>Brand</button>
+      <button class="nav-btn" data-page="depo" type="button"><span class="ico">📍</span>DEPO</button>
+      <button class="nav-btn" data-page="sales" type="button"><span class="ico">👤</span>Sales</button>
+      <button class="nav-btn" data-page="kalkulator" type="button"><span class="ico">🧮</span>Kalkulator</button>
+      <button class="nav-btn" data-page="review-dealer" type="button"><span class="ico">📋</span>Review Dealer</button>
+      <button class="nav-btn" data-page="review-sales" type="button"><span class="ico">📈</span>Review Sales</button>
+    </div>
+  </nav>
+
   <main class="wrap" id="app">
     <div class="loading" id="bootLoading">
       <div class="spinner"></div>
@@ -1230,17 +1243,6 @@
     </div>
   </main>
 
-  <nav class="bottom-nav" id="bottomNav" hidden>
-    <div class="bottom-nav-inner">
-      <button class="nav-btn on" data-page="overview"><span class="ico">🏠</span>Ringkas</button>
-      <button class="nav-btn" data-page="brands"><span class="ico">📊</span>Brand</button>
-      <button class="nav-btn" data-page="depo"><span class="ico">📍</span>DEPO</button>
-      <button class="nav-btn" data-page="sales"><span class="ico">👤</span>Sales</button>
-      <button class="nav-btn" data-page="kalkulator"><span class="ico">🧮</span>Kalkulator</button>
-      <button class="nav-btn" data-page="review-dealer"><span class="ico">📋</span>Review Dealer</button>
-      <button class="nav-btn" data-page="review-sales"><span class="ico">📈</span>Review Sales</button>
-    </div>
-  </nav>
   <div class="toast" id="toast"></div>
 
   <script>
@@ -2542,7 +2544,8 @@
       paintSalesMobile();
     };
 
-    document.getElementById('bottomNav').hidden = false;
+    const navEl = document.getElementById('bottomNav');
+    if (navEl) navEl.hidden = false;
     document.querySelectorAll('.nav-btn').forEach(btn => {
       btn.onclick = () => paint(btn.dataset.page || 'sales');
     });
@@ -2572,13 +2575,15 @@
         renderMobileApp();
       } else {
         buildUI();
-        document.getElementById('bottomNav').hidden = false;
+        const navEl = document.getElementById('bottomNav');
+        if (navEl) navEl.hidden = false;
         await new Promise(r => setTimeout(r, 10));
         apply();
       }
       setBootProgress(100, 'Siap');
     } catch (e) {
       const msg = String(e && e.message ? e.message : e);
+      const isFile = location.protocol === 'file:';
       const isCors = /failed to fetch|networkerror|cors|load failed/i.test(msg);
       const isMem = /out of memory|allocation|maximum call/i.test(msg);
       document.getElementById('app').innerHTML = `<div class="section" style="margin-top:20px;text-align:center">
@@ -2586,7 +2591,9 @@
         <p class="empty">${esc(msg)}</p>
         <p class="empty" style="margin-top:8px;font-size:.8rem">Sumber: ${esc(dataUrl)}</p>
         <p style="color:var(--muted);font-size:.85rem;margin-top:10px;text-align:left;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.45">
-          ${isMem
+          ${isFile
+            ? '<strong>Jangan buka index.html langsung.</strong> Browser memblokir file lokal (bukan error GitHub). Double-click <code>start.bat</code>, biarkan jendela hitam tetap terbuka, lalu buka <code>http://127.0.0.1:8765/</code>.'
+            : isMem
             ? '<strong>HP kehabisan memori.</strong> Tutup tab lain, pakai Chrome, atau buka lewat Wi‑Fi. Data dashboard sangat besar (~150 MB di memori).'
             : isCors
             ? '<strong>CORS / jaringan:</strong> pastikan data.json.gz di root repo Pages. Lihat CARA-GITHUB.txt.'
