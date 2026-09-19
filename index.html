@@ -7,16 +7,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>DASHBOARD UJUNG WETAN · HP v16</title>
+  <title>DASHBOARD UJUNG WETAN · HP v17</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- Default data URL (GitHub Pages). Opsional: config.js di root bisa menimpa ini. -->
   <script>
     window.DASHBOARD_CONFIG = window.DASHBOARD_CONFIG || { dataUrl: 'data.json.gz' };
     // Versi UI — ganti angka ini setiap rilis agar cache browser/HP ikut refresh
-    window.DASHBOARD_UI_VERSION = '16';
+    window.DASHBOARD_UI_VERSION = '17';
   </script>
-  <script src="config.js?v=16" onerror="/* config.js opsional — 404 diabaikan */"></script>
+  <script src="config.js?v=17" onerror="/* config.js opsional — 404 diabaikan */"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <style>
@@ -989,8 +989,10 @@
       padding: 9px 12px; font-size: .82rem; font-weight: 700; background: #fff;
     }
     .sku-tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    .sku-tbl { width: 100%; border-collapse: collapse; font-size: .8rem; min-width: 720px; }
-    .sku-tbl th, .sku-tbl td { padding: 9px 10px; border-bottom: 1px solid #e8eef6; text-align: left; vertical-align: top; }
+    .sku-tbl { width: 100%; border-collapse: collapse; font-size: .8rem; min-width: 860px; table-layout: fixed; }
+    .sku-tbl th, .sku-tbl td { padding: 9px 10px; border-bottom: 1px solid #e8eef6; text-align: left; vertical-align: middle; }
+    .sku-tbl th:first-child, .sku-tbl td:first-child { width: 24%; }
+    .sku-tbl th.n, .sku-tbl td.n { width: 8.5%; }
     .sku-tbl th {
       background: #0B2F6B; color: #fff; font-size: .68rem; font-weight: 900;
       text-transform: uppercase; letter-spacing: .03em; white-space: nowrap;
@@ -1020,16 +1022,15 @@
       transition: transform .15s ease;
     }
     .sku-tbl tr.sku-main.open .sku-toggle { transform: rotate(90deg); }
-    .sku-sub td { background: #f8fafc !important; padding: 8px 10px 12px 28px; }
-    .sku-dealer-tbl { width: 100%; border-collapse: collapse; font-size: .74rem; min-width: 520px; }
-    .sku-dealer-tbl th {
-      background: #e2e8f0; color: #334155; font-size: .64rem; font-weight: 900;
-      text-transform: uppercase; padding: 6px 8px; text-align: left;
+    .sku-tbl tr.sku-deal td {
+      background: #f8fafc; font-size: .74rem; font-weight: 700; color: #334155;
+      padding-top: 6px; padding-bottom: 6px;
     }
-    .sku-dealer-tbl th.n, .sku-dealer-tbl td.n { text-align: right; white-space: nowrap; }
-    .sku-dealer-tbl td { padding: 6px 8px; border-bottom: 1px solid #e8eef6; font-weight: 700; }
-    .sku-dealer-tbl tfoot td { background: #e2e8f0; color: #0B2F6B; font-weight: 900; }
-    .sku-empty-deal { color: #94a3b8; font-size: .74rem; font-weight: 700; padding: 6px 0; }
+    .sku-tbl tr.sku-deal td:first-child { padding-left: 28px; font-weight: 700; }
+    .sku-tbl tr.sku-deal-foot td { background: #e8eef6 !important; font-weight: 900; color: #0B2F6B; }
+    .sku-tbl tr.sku-deal:hover td { background: #eef2f7; }
+    .chart-box.sku-week { height: 360px; }
+    @media (min-width: 760px) { .chart-box.sku-week { height: 400px; } }
     .rd-vc-insight-list .neg, .rd-vc-insight-list strong.neg { color: #b91c1c; }
     .rd-vc-bars + p .pos, .rd-vc-bar-row .pos { color: #047857; }
     .rd-vc-bars + p .neg, .rd-vc-bar-row .neg { color: #b91c1c; }
@@ -1259,7 +1260,7 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand-block">
-        <img class="logo" src="logo-tam.jpg?v=16" alt="Logo TAM · member of erajaya group" />
+        <img class="logo" src="logo-tam.jpg?v=17" alt="Logo TAM · member of erajaya group" />
         <div>
           <h1>DASHBOARD UJUNG WETAN</h1>
           <p id="subHead">PT TELETAMA ARTHA MANDIRI</p>
@@ -3049,39 +3050,51 @@
     const footPrev = iPrev >= 0 ? (footWeeks[iPrev] || 0) : 0;
     const footDelta = footLast - footPrev;
 
-    const dealerHtml = (sku) => {
+    const dealerRowsHtml = (sku, idx) => {
       const dMap = skuDealers.get(sku);
-      if (!dMap || !dMap.size) return '<div class="sku-empty-deal">Tidak ada dealer pada 4 minggu ini.</div>';
+      if (!dMap || !dMap.size) {
+        return `<tr class="sku-deal" data-sku-idx="${idx}" hidden>
+          <td colspan="${5 + last4.length}" style="padding-left:28px;color:#94a3b8">Tidak ada dealer pada 4 minggu ini.</td>
+        </tr>`;
+      }
       const list = [...dMap.entries()].map(([name, info]) => {
         const byW = last4.map(s => info.bySlot.get(s) || 0);
         const tot = byW.reduce((a, b) => a + b, 0);
-        return { name, byW, tot };
+        const last = byW[iLast] || 0;
+        const prev = iPrev >= 0 ? (byW[iPrev] || 0) : 0;
+        const delta = last - prev;
+        let status = skuTrendTone(delta);
+        if (!prev && last) status = 'baru';
+        return { name, byW, tot, last, prev, delta, status };
       }).filter(d => d.tot > 0).sort((a, b) => b.tot - a.tot);
-      if (!list.length) return '<div class="sku-empty-deal">Tidak ada dealer pada 4 minggu ini.</div>';
+      if (!list.length) {
+        return `<tr class="sku-deal" data-sku-idx="${idx}" hidden>
+          <td colspan="${5 + last4.length}" style="padding-left:28px;color:#94a3b8">Tidak ada dealer pada 4 minggu ini.</td>
+        </tr>`;
+      }
       const dFoot = last4.map((_, wi) => list.reduce((s, d) => s + d.byW[wi], 0));
-      return `<table class="sku-dealer-tbl">
-        <thead>
-          <tr>
-            <th>Dealer / Sold to Party</th>
-            ${last4.map(s => `<th class="n">${esc(slotLabel(s))}</th>`).join('')}
-            <th class="n">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${list.map(d => `<tr>
-            <td>${esc(d.name)}</td>
-            ${d.byW.map(v => `<td class="n">${fmtN(v)}</td>`).join('')}
-            <td class="n">${fmtN(d.tot)}</td>
-          </tr>`).join('')}
-        </tbody>
-        <tfoot>
-          <tr>
-            <td>TOTAL ${fmtN(list.length)} dealer</td>
-            ${dFoot.map(v => `<td class="n">${fmtN(v)}</td>`).join('')}
-            <td class="n">${fmtN(dFoot.reduce((a, b) => a + b, 0))}</td>
-          </tr>
-        </tfoot>
-      </table>`;
+      const dFootLast = dFoot[iLast] || 0;
+      const dFootPrev = iPrev >= 0 ? (dFoot[iPrev] || 0) : 0;
+      const dFootDelta = dFootLast - dFootPrev;
+      return list.map(d => {
+        const label = d.status === 'baru' ? '▲ Baru' : skuTrendArrow(d.delta);
+        const cls = d.status === 'baru' ? 'baru' : skuTrendTone(d.delta);
+        return `<tr class="sku-deal" data-sku-idx="${idx}" hidden>
+          <td>${esc(d.name)}</td>
+          ${d.byW.map(v => `<td class="n">${fmtN(v)}</td>`).join('')}
+          <td class="n">${fmtN(d.tot)}</td>
+          <td class="n delta ${cls}">${fmtDeltaQty(d.delta)}</td>
+          <td class="n delta ${cls}">${skuTrendPct(d.last, d.prev)}</td>
+          <td><span class="sku-status ${cls}">${label}</span></td>
+        </tr>`;
+      }).join('') + `<tr class="sku-deal sku-deal-foot" data-sku-idx="${idx}" hidden>
+        <td>TOTAL ${fmtN(list.length)} dealer</td>
+        ${dFoot.map(v => `<td class="n">${fmtN(v)}</td>`).join('')}
+        <td class="n">${fmtN(dFoot.reduce((a, b) => a + b, 0))}</td>
+        <td class="n delta ${skuTrendTone(dFootDelta)}">${fmtDeltaQty(dFootDelta)}</td>
+        <td class="n delta ${skuTrendTone(dFootDelta)}">${skuTrendPct(dFootLast, dFootPrev)}</td>
+        <td></td>
+      </tr>`;
     };
 
     el.innerHTML = `
@@ -3132,7 +3145,7 @@
         <div class="section-head">
           <div><h3>Trend quantity mingguan</h3><p>Total qty semua type SKU · filter aktif</p></div>
         </div>
-        <div class="chart-box"><canvas id="cSkuWeek"></canvas></div>
+        <div class="chart-box sku-week"><canvas id="cSkuWeek"></canvas></div>
       </section>
       <section class="section">
         <div class="section-head">
@@ -3172,9 +3185,7 @@
                   <td class="n delta ${cls}">${skuTrendPct(r.last, r.prev)}</td>
                   <td><span class="sku-status ${cls}">${label}</span></td>
                 </tr>
-                <tr class="sku-sub" data-sku-idx="${idx}" hidden>
-                  <td colspan="${span}">${dealerHtml(r.sku)}</td>
-                </tr>`;
+                ${dealerRowsHtml(r.sku, idx)}`;
               }).join('') : `<tr><td colspan="${colCount}" class="empty">Tidak ada SKU yang cocok dengan pencarian.</td></tr>`}
             </tbody>
             <tfoot>
@@ -3208,10 +3219,10 @@
     el.querySelectorAll('tr.sku-main').forEach(tr => {
       tr.onclick = () => {
         const idx = tr.getAttribute('data-sku-idx');
-        const sub = el.querySelector('tr.sku-sub[data-sku-idx="' + idx + '"]');
-        if (!sub) return;
-        const open = sub.hidden;
-        sub.hidden = !open;
+        const subs = el.querySelectorAll('tr.sku-deal[data-sku-idx="' + idx + '"]');
+        if (!subs.length) return;
+        const open = subs[0].hidden;
+        subs.forEach(row => { row.hidden = !open; });
         tr.classList.toggle('open', open);
       };
     });
@@ -3234,10 +3245,13 @@
             pointRadius: 4,
             pointBackgroundColor: '#1d4ed8',
             datalabels: {
-              align: 'top',
-              anchor: 'end',
+              display: true,
+              align: (ctx) => ctx.dataIndex % 2 === 0 ? 'top' : 'bottom',
+              anchor: (ctx) => ctx.dataIndex % 2 === 0 ? 'end' : 'start',
+              offset: 2,
+              clamp: true,
               color: '#0B2F6B',
-              font: { weight: '900', size: 10 },
+              font: { weight: '900', size: weekLabelsChart.length > 24 ? 8 : 10 },
               formatter: (v) => v ? fmtN(v) : ''
             }
           }]
@@ -3245,10 +3259,10 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          layout: { padding: { top: 18 } },
+          layout: { padding: { top: 28, bottom: 18 } },
           plugins: {
             legend: { display: false },
-            datalabels: { display: weekLabelsChart.length <= 16 },
+            datalabels: { display: true },
             tooltip: { callbacks: { label: (ctx) => ' Qty: ' + fmtN(ctx.raw || 0) } }
           },
           scales: {
