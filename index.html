@@ -7,16 +7,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>DASHBOARD UJUNG WETAN · HP v15</title>
+  <title>DASHBOARD UJUNG WETAN · HP v16</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- Default data URL (GitHub Pages). Opsional: config.js di root bisa menimpa ini. -->
   <script>
     window.DASHBOARD_CONFIG = window.DASHBOARD_CONFIG || { dataUrl: 'data.json.gz' };
     // Versi UI — ganti angka ini setiap rilis agar cache browser/HP ikut refresh
-    window.DASHBOARD_UI_VERSION = '15';
+    window.DASHBOARD_UI_VERSION = '16';
   </script>
-  <script src="config.js?v=15" onerror="/* config.js opsional — 404 diabaikan */"></script>
+  <script src="config.js?v=16" onerror="/* config.js opsional — 404 diabaikan */"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <style>
@@ -1009,6 +1009,27 @@
     .sku-status.neg { background: #fee2e2; color: #b91c1c; }
     .sku-status.flat { background: #e2e8f0; color: #475569; }
     .sku-status.baru { background: #dbeafe; color: #1d4ed8; }
+    .sku-tbl tfoot td {
+      background: #0B2F6B; color: #fff; font-weight: 900; border-bottom: none;
+    }
+    .sku-tbl tr.sku-main { cursor: pointer; }
+    .sku-tbl tr.sku-main:hover td { background: #eef6ff; }
+    .sku-tbl tr.sku-main.open td { background: #e8f1ff; }
+    .sku-toggle {
+      display: inline-block; width: 1.1em; font-size: .85rem; color: #0B2F6B;
+      transition: transform .15s ease;
+    }
+    .sku-tbl tr.sku-main.open .sku-toggle { transform: rotate(90deg); }
+    .sku-sub td { background: #f8fafc !important; padding: 8px 10px 12px 28px; }
+    .sku-dealer-tbl { width: 100%; border-collapse: collapse; font-size: .74rem; min-width: 520px; }
+    .sku-dealer-tbl th {
+      background: #e2e8f0; color: #334155; font-size: .64rem; font-weight: 900;
+      text-transform: uppercase; padding: 6px 8px; text-align: left;
+    }
+    .sku-dealer-tbl th.n, .sku-dealer-tbl td.n { text-align: right; white-space: nowrap; }
+    .sku-dealer-tbl td { padding: 6px 8px; border-bottom: 1px solid #e8eef6; font-weight: 700; }
+    .sku-dealer-tbl tfoot td { background: #e2e8f0; color: #0B2F6B; font-weight: 900; }
+    .sku-empty-deal { color: #94a3b8; font-size: .74rem; font-weight: 700; padding: 6px 0; }
     .rd-vc-insight-list .neg, .rd-vc-insight-list strong.neg { color: #b91c1c; }
     .rd-vc-bars + p .pos, .rd-vc-bar-row .pos { color: #047857; }
     .rd-vc-bars + p .neg, .rd-vc-bar-row .neg { color: #b91c1c; }
@@ -1238,7 +1259,7 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand-block">
-        <img class="logo" src="logo-tam.jpg?v=15" alt="Logo TAM · member of erajaya group" />
+        <img class="logo" src="logo-tam.jpg?v=16" alt="Logo TAM · member of erajaya group" />
         <div>
           <h1>DASHBOARD UJUNG WETAN</h1>
           <p id="subHead">PT TELETAMA ARTHA MANDIRI</p>
@@ -2920,22 +2941,26 @@
     return sign + pct.toFixed(1) + '%';
   }
 
-  /** Qty per type SKU per minggu + keterangan naik/turun WoW */
+  /** Qty per type SKU per minggu + daftar 4 minggu terakhir + dealer */
   function renderSkuTrend(dealers) {
     const el = document.getElementById('page-sku-trend');
     if (!el) return;
 
-    const weekMap = new Map(); // week -> { totalQty, bySku: Map(sku -> qty) }
-    const skuTotals = new Map();
+    const slotMap = new Map(); // year|week -> { year, week, totalQty, bySku }
+    const skuTotalsAll = new Map(); // sku -> qty all filtered weeks
+    const skuDealers = new Map(); // sku -> Map(dealer -> { total, bySlot })
 
     for (const r of (dealers || [])) {
       const items = r.sku_items;
       if (!Array.isArray(items) || !items.length) continue;
       const week = r.week || '';
       if (!week) continue;
+      const year = String(r.year || '');
+      const slot = year + '|' + week;
       const brand = r.brand || 'SAMSUNG';
-      if (!weekMap.has(week)) weekMap.set(week, { totalQty: 0, bySku: new Map() });
-      const w = weekMap.get(week);
+      const dealerName = String(r.dealer || r.soldto || '').trim() || 'Unknown';
+      if (!slotMap.has(slot)) slotMap.set(slot, { year, week, totalQty: 0, bySku: new Map() });
+      const w = slotMap.get(slot);
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
         const sku = normalizeSku(brand, it.sku || it.unit);
@@ -2943,12 +2968,22 @@
         if (!sku || !qty) continue;
         w.totalQty += qty;
         w.bySku.set(sku, (w.bySku.get(sku) || 0) + qty);
-        skuTotals.set(sku, (skuTotals.get(sku) || 0) + qty);
+        skuTotalsAll.set(sku, (skuTotalsAll.get(sku) || 0) + qty);
+        if (!skuDealers.has(sku)) skuDealers.set(sku, new Map());
+        const dMap = skuDealers.get(sku);
+        if (!dMap.has(dealerName)) dMap.set(dealerName, { total: 0, bySlot: new Map() });
+        const d = dMap.get(dealerName);
+        d.total += qty;
+        d.bySlot.set(slot, (d.bySlot.get(slot) || 0) + qty);
       }
     }
 
-    const weeks = [...weekMap.keys()].sort((a, b) => weekKey(a) - weekKey(b));
-    if (!weeks.length) {
+    const slots = [...slotMap.keys()].sort((a, b) => {
+      const [ya, wa] = a.split('|');
+      const [yb, wb] = b.split('|');
+      return (Number(ya) || 0) - (Number(yb) || 0) || weekKey(wa) - weekKey(wb);
+    });
+    if (!slots.length) {
       el.innerHTML = `<section class="section">
         <div class="section-head"><div><h3>SKU Trend</h3><p>Quantity per type SKU per minggu</p></div></div>
         <p class="empty">Tidak ada data SKU pada filter aktif. Coba reset filter atau pilih periode lain.</p>
@@ -2956,33 +2991,42 @@
       return;
     }
 
-    const iLast = weeks.length - 1;
-    const iPrev = weeks.length - 2;
-    const wLast = weeks[iLast];
-    const wPrev = iPrev >= 0 ? weeks[iPrev] : '';
-    const lastMap = weekMap.get(wLast).bySku;
-    const prevMap = wPrev ? weekMap.get(wPrev).bySku : new Map();
-    const totalLast = weekMap.get(wLast).totalQty;
-    const totalPrev = wPrev ? weekMap.get(wPrev).totalQty : 0;
+    const last4 = slots.slice(-4);
+    const slotLabel = (slot) => {
+      const [y, w] = slot.split('|');
+      const years = [...new Set(last4.map(s => s.split('|')[0]))];
+      return years.length > 1 ? (y + ' ' + w) : w;
+    };
+
+    const iLast = last4.length - 1;
+    const iPrev = last4.length - 2;
+    const slotLast = last4[iLast];
+    const slotPrev = iPrev >= 0 ? last4[iPrev] : '';
+    const lastMap = slotMap.get(slotLast).bySku;
+    const prevMap = slotPrev ? slotMap.get(slotPrev).bySku : new Map();
+    const totalLast = slotMap.get(slotLast).totalQty;
+    const totalPrev = slotPrev ? slotMap.get(slotPrev).totalQty : 0;
     const totalDelta = totalLast - totalPrev;
+    const wLast = slotLabel(slotLast);
+    const wPrev = slotPrev ? slotLabel(slotPrev) : '';
 
     const q = String(skuTrendQuery || '').trim().toLowerCase();
-    let rows = [...skuTotals.entries()].map(([sku, total]) => {
-      const last = lastMap.get(sku) || 0;
-      const prev = prevMap.get(sku) || 0;
+    let rows = [...skuTotalsAll.entries()].map(([sku]) => {
+      const byW = last4.map(s => slotMap.get(s).bySku.get(sku) || 0);
+      const total4 = byW.reduce((a, b) => a + b, 0);
+      const last = byW[iLast] || 0;
+      const prev = iPrev >= 0 ? (byW[iPrev] || 0) : 0;
       const delta = last - prev;
       let status = skuTrendTone(delta);
       if (!prev && last) status = 'baru';
-      return { sku, total, last, prev, delta, status };
+      return { sku, byW, total4, last, prev, delta, status };
     });
     if (q) rows = rows.filter(r => r.sku.toLowerCase().includes(q));
-    rows.sort((a, b) => b.total - a.total || b.last - a.last);
+    rows.sort((a, b) => b.total4 - a.total4 || b.last - a.last);
 
     const naik = rows.filter(r => r.delta > 0).sort((a, b) => b.delta - a.delta);
     const turun = rows.filter(r => r.delta < 0).sort((a, b) => a.delta - b.delta);
     const baru = rows.filter(r => r.status === 'baru');
-    const limit = skuTrendLimit === 'all' ? rows.length : (Number(skuTrendLimit) || 20);
-    const shown = rows.slice(0, limit);
 
     const fmtDeltaQty = (d) => {
       const n = Number(d) || 0;
@@ -2990,29 +3034,72 @@
       return (n > 0 ? '+' : '−') + fmtN(Math.abs(n));
     };
 
-    const weekSeries = weeks.map(w => weekMap.get(w).totalQty);
+    const weekLabelsChart = slots.map(s => slotLabel(s));
+    const weekSeries = slots.map(s => slotMap.get(s).totalQty);
     const chip = (r) => `<span class="wk-chip ${r.status === 'baru' ? 'pos' : skuTrendTone(r.delta)}">
       <strong>${esc(r.sku)}</strong>
       ${r.status === 'baru' ? 'baru' : skuTrendArrow(r.delta)} ${fmtDeltaQty(r.delta)}
       <em>(${skuTrendPct(r.last, r.prev)})</em>
     </span>`;
 
+    const colCount = 3 + last4.length; // sku + weeks + total + delta + % + ket
+    const footWeeks = last4.map((_, wi) => rows.reduce((s, r) => s + (r.byW[wi] || 0), 0));
+    const footTotal = footWeeks.reduce((a, b) => a + b, 0);
+    const footLast = footWeeks[iLast] || 0;
+    const footPrev = iPrev >= 0 ? (footWeeks[iPrev] || 0) : 0;
+    const footDelta = footLast - footPrev;
+
+    const dealerHtml = (sku) => {
+      const dMap = skuDealers.get(sku);
+      if (!dMap || !dMap.size) return '<div class="sku-empty-deal">Tidak ada dealer pada 4 minggu ini.</div>';
+      const list = [...dMap.entries()].map(([name, info]) => {
+        const byW = last4.map(s => info.bySlot.get(s) || 0);
+        const tot = byW.reduce((a, b) => a + b, 0);
+        return { name, byW, tot };
+      }).filter(d => d.tot > 0).sort((a, b) => b.tot - a.tot);
+      if (!list.length) return '<div class="sku-empty-deal">Tidak ada dealer pada 4 minggu ini.</div>';
+      const dFoot = last4.map((_, wi) => list.reduce((s, d) => s + d.byW[wi], 0));
+      return `<table class="sku-dealer-tbl">
+        <thead>
+          <tr>
+            <th>Dealer / Sold to Party</th>
+            ${last4.map(s => `<th class="n">${esc(slotLabel(s))}</th>`).join('')}
+            <th class="n">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.map(d => `<tr>
+            <td>${esc(d.name)}</td>
+            ${d.byW.map(v => `<td class="n">${fmtN(v)}</td>`).join('')}
+            <td class="n">${fmtN(d.tot)}</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td>TOTAL ${fmtN(list.length)} dealer</td>
+            ${dFoot.map(v => `<td class="n">${fmtN(v)}</td>`).join('')}
+            <td class="n">${fmtN(dFoot.reduce((a, b) => a + b, 0))}</td>
+          </tr>
+        </tfoot>
+      </table>`;
+    };
+
     el.innerHTML = `
       <section class="section">
         <div class="section-head">
           <div>
             <h3>SKU Trend · Quantity per minggu</h3>
-            <p>Isi SKU dari data dealer · bandingkan <strong>${esc(wPrev || '–')}</strong> → <strong>${esc(wLast)}</strong> (filter slicer ikut berlaku)</p>
+            <p>Isi SKU dari data dealer · WoW <strong>${esc(wPrev || '–')}</strong> → <strong>${esc(wLast)}</strong> · daftar memakai 4 minggu terakhir filter</p>
           </div>
         </div>
         <div class="rd-kpi-grid">
           <div class="rd-kpi"><div class="v">${fmtN(totalLast)}</div><div class="l">Qty ${esc(wLast)}</div><div class="s">${esc(wLast)}</div></div>
           <div class="rd-kpi"><div class="v ${skuTrendTone(totalDelta)}">${skuTrendArrow(totalDelta)} ${fmtDeltaQty(totalDelta)}</div><div class="l">WoW Quantity</div><div class="s">${skuTrendPct(totalLast, totalPrev)}</div></div>
-          <div class="rd-kpi"><div class="v">${fmtN(skuTotals.size)}</div><div class="l">Type SKU</div><div class="s">unik di filter aktif</div></div>
+          <div class="rd-kpi"><div class="v">${fmtN(rows.length)}</div><div class="l">Type SKU</div><div class="s">semua type di daftar</div></div>
           <div class="rd-kpi"><div class="v pos">${fmtN(naik.length)}</div><div class="l">SKU naik</div><div class="s">vs minggu sebelumnya</div></div>
           <div class="rd-kpi"><div class="v neg">${fmtN(turun.length)}</div><div class="l">SKU turun</div><div class="s">vs minggu sebelumnya</div></div>
         </div>
-        ${weeks.length < 2 ? `<div class="wk-insight muted">Minimal 2 minggu di filter agar bisa bandingkan naik/turun. Sekarang hanya ${esc(wLast)}.</div>` : `
+        ${last4.length < 2 ? `<div class="wk-insight muted">Minimal 2 minggu di filter agar bisa bandingkan naik/turun. Sekarang hanya ${esc(wLast)}.</div>` : `
         <div class="wk-insight">
           <div class="wk-insight-head">
             <span class="wk-badge">Analisis WoW</span>
@@ -3051,7 +3138,7 @@
         <div class="section-head">
           <div>
             <h3>Daftar SKU</h3>
-            <p>${fmtN(rows.length)} type · tampilkan ${skuTrendLimit === 'all' ? 'semua' : 'top ' + fmtN(limit)} · urut total qty</p>
+            <p>${fmtN(rows.length)} type · 4 minggu terakhir filter (${last4.map(slotLabel).map(esc).join(' · ')}) · tap baris untuk lihat dealer</p>
           </div>
         </div>
         <div class="sku-tools">
@@ -3059,51 +3146,53 @@
             <label>Cari type SKU</label>
             <input type="search" id="skuTrendSearch" placeholder="Contoh: Galaxy A16 / 8/256" value="${esc(skuTrendQuery)}" />
           </div>
-          <div class="field" style="flex:0 0 160px;min-width:140px">
-            <label>Tampilkan</label>
-            <select id="skuTrendLimit" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:.82rem;font-weight:700;background:#fff">
-              <option value="10" ${skuTrendLimit==10?'selected':''}>Top 10</option>
-              <option value="20" ${skuTrendLimit==20?'selected':''}>Top 20</option>
-              <option value="50" ${skuTrendLimit==50?'selected':''}>Top 50</option>
-              <option value="all" ${skuTrendLimit==='all'?'selected':''}>Semua</option>
-            </select>
-          </div>
         </div>
         <div class="sku-tbl-wrap">
           <table class="sku-tbl">
             <thead>
               <tr>
                 <th>Type SKU</th>
-                <th class="n">Total qty</th>
-                <th class="n">${esc(wPrev || 'Minggu sblm')}</th>
-                <th class="n">${esc(wLast)}</th>
+                ${last4.map(s => `<th class="n">${esc(slotLabel(s))}</th>`).join('')}
+                <th class="n">Total 4 minggu</th>
                 <th class="n">Δ Qty</th>
                 <th class="n">%</th>
                 <th>Keterangan</th>
               </tr>
             </thead>
             <tbody>
-              ${shown.length ? shown.map(r => {
+              ${rows.length ? rows.map((r, idx) => {
                 const label = r.status === 'baru' ? '▲ Baru' : skuTrendArrow(r.delta);
                 const cls = r.status === 'baru' ? 'baru' : skuTrendTone(r.delta);
-                return `<tr>
-                  <td class="sku-name">${esc(r.sku)}</td>
-                  <td class="n">${fmtN(r.total)}</td>
-                  <td class="n">${fmtN(r.prev)}</td>
-                  <td class="n">${fmtN(r.last)}</td>
+                const span = 5 + last4.length;
+                return `<tr class="sku-main" data-sku-idx="${idx}">
+                  <td class="sku-name"><span class="sku-toggle">▸</span> ${esc(r.sku)}</td>
+                  ${r.byW.map(v => `<td class="n">${fmtN(v)}</td>`).join('')}
+                  <td class="n">${fmtN(r.total4)}</td>
                   <td class="n delta ${cls}">${fmtDeltaQty(r.delta)}</td>
                   <td class="n delta ${cls}">${skuTrendPct(r.last, r.prev)}</td>
                   <td><span class="sku-status ${cls}">${label}</span></td>
+                </tr>
+                <tr class="sku-sub" data-sku-idx="${idx}" hidden>
+                  <td colspan="${span}">${dealerHtml(r.sku)}</td>
                 </tr>`;
-              }).join('') : `<tr><td colspan="7" class="empty">Tidak ada SKU yang cocok dengan pencarian.</td></tr>`}
+              }).join('') : `<tr><td colspan="${colCount}" class="empty">Tidak ada SKU yang cocok dengan pencarian.</td></tr>`}
             </tbody>
+            <tfoot>
+              <tr>
+                <td>TOTAL ${fmtN(rows.length)} SKU</td>
+                ${footWeeks.map(v => `<td class="n">${fmtN(v)}</td>`).join('')}
+                <td class="n">${fmtN(footTotal)}</td>
+                <td class="n">${fmtDeltaQty(footDelta)}</td>
+                <td class="n">${skuTrendPct(footLast, footPrev)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </section>
     `;
 
     const search = document.getElementById('skuTrendSearch');
-    const lim = document.getElementById('skuTrendLimit');
     if (search) {
       search.onkeydown = (e) => {
         if (e.key === 'Enter') {
@@ -3116,12 +3205,16 @@
         apply();
       };
     }
-    if (lim) {
-      lim.onchange = () => {
-        skuTrendLimit = lim.value === 'all' ? 'all' : (Number(lim.value) || 20);
-        apply();
+    el.querySelectorAll('tr.sku-main').forEach(tr => {
+      tr.onclick = () => {
+        const idx = tr.getAttribute('data-sku-idx');
+        const sub = el.querySelector('tr.sku-sub[data-sku-idx="' + idx + '"]');
+        if (!sub) return;
+        const open = sub.hidden;
+        sub.hidden = !open;
+        tr.classList.toggle('open', open);
       };
-    }
+    });
 
     destroyChart('skuWeek');
     const canvas = document.getElementById('cSkuWeek');
@@ -3129,7 +3222,7 @@
       charts.skuWeek = new Chart(canvas, {
         type: 'line',
         data: {
-          labels: weeks,
+          labels: weekLabelsChart,
           datasets: [{
             label: 'Qty',
             data: weekSeries,
@@ -3155,7 +3248,7 @@
           layout: { padding: { top: 18 } },
           plugins: {
             legend: { display: false },
-            datalabels: { display: weeks.length <= 16 },
+            datalabels: { display: weekLabelsChart.length <= 16 },
             tooltip: { callbacks: { label: (ctx) => ' Qty: ' + fmtN(ctx.raw || 0) } }
           },
           scales: {
