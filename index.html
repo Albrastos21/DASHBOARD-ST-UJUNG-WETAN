@@ -7,16 +7,16 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
-  <title>DASHBOARD UJUNG WETAN · HP v13</title>
+  <title>DASHBOARD UJUNG WETAN · HP v15</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <!-- Default data URL (GitHub Pages). Opsional: config.js di root bisa menimpa ini. -->
   <script>
     window.DASHBOARD_CONFIG = window.DASHBOARD_CONFIG || { dataUrl: 'data.json.gz' };
     // Versi UI — ganti angka ini setiap rilis agar cache browser/HP ikut refresh
-    window.DASHBOARD_UI_VERSION = '14';
+    window.DASHBOARD_UI_VERSION = '15';
   </script>
-  <script src="config.js?v=14" onerror="/* config.js opsional — 404 diabaikan */"></script>
+  <script src="config.js?v=15" onerror="/* config.js opsional — 404 diabaikan */"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
   <style>
@@ -978,6 +978,37 @@
     .wk-summary .pos { color: #047857; }
     .wk-summary .neg { color: #b91c1c; }
     .wk-note { margin-top: 8px; font-size: .68rem; font-weight: 700; color: #94a3b8; line-height: 1.4; }
+
+    /* SKU Trend */
+    .sku-tools {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 8px 0 12px;
+    }
+    .sku-tools .field { min-width: 180px; flex: 1; }
+    .sku-tools input[type="search"] {
+      width: 100%; border: 1px solid var(--line); border-radius: 10px;
+      padding: 9px 12px; font-size: .82rem; font-weight: 700; background: #fff;
+    }
+    .sku-tbl-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .sku-tbl { width: 100%; border-collapse: collapse; font-size: .8rem; min-width: 720px; }
+    .sku-tbl th, .sku-tbl td { padding: 9px 10px; border-bottom: 1px solid #e8eef6; text-align: left; vertical-align: top; }
+    .sku-tbl th {
+      background: #0B2F6B; color: #fff; font-size: .68rem; font-weight: 900;
+      text-transform: uppercase; letter-spacing: .03em; white-space: nowrap;
+    }
+    .sku-tbl th.n, .sku-tbl td.n { text-align: right; white-space: nowrap; }
+    .sku-tbl tr:hover td { background: #f8fafc; }
+    .sku-tbl .sku-name { font-weight: 800; color: #0b1f3a; line-height: 1.35; }
+    .sku-tbl .delta.pos { color: #047857; font-weight: 900; }
+    .sku-tbl .delta.neg { color: #b91c1c; font-weight: 900; }
+    .sku-tbl .delta.flat { color: #64748b; font-weight: 800; }
+    .sku-status {
+      display: inline-block; border-radius: 999px; padding: 3px 8px;
+      font-size: .68rem; font-weight: 900; white-space: nowrap;
+    }
+    .sku-status.pos { background: #d1fae5; color: #047857; }
+    .sku-status.neg { background: #fee2e2; color: #b91c1c; }
+    .sku-status.flat { background: #e2e8f0; color: #475569; }
+    .sku-status.baru { background: #dbeafe; color: #1d4ed8; }
     .rd-vc-insight-list .neg, .rd-vc-insight-list strong.neg { color: #b91c1c; }
     .rd-vc-bars + p .pos, .rd-vc-bar-row .pos { color: #047857; }
     .rd-vc-bars + p .neg, .rd-vc-bar-row .neg { color: #b91c1c; }
@@ -1145,7 +1176,7 @@
         width: 100%;
         margin: 0;
         display: grid;
-        grid-template-columns: repeat(7, minmax(0, 1fr));
+        grid-template-columns: repeat(8, minmax(0, 1fr));
         gap: 6px;
         overflow: visible;
         padding: 0;
@@ -1159,9 +1190,9 @@
         flex-direction: row;
         justify-content: center;
         align-items: center;
-        font-size: .72rem;
-        gap: 6px;
-        padding: 12px 6px;
+        font-size: .68rem;
+        gap: 5px;
+        padding: 12px 4px;
         border-radius: 12px;
         white-space: nowrap;
       }
@@ -1177,7 +1208,7 @@
       }
     }
     @media (min-width: 1100px) {
-      .nav-btn { font-size: .78rem; padding: 12px 8px; gap: 8px; }
+      .nav-btn { font-size: .74rem; padding: 12px 6px; gap: 6px; }
     }
 
     /* Mode HP: hanya Sales + Kalkulator (2 tombol) */
@@ -1207,7 +1238,7 @@
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand-block">
-        <img class="logo" src="logo-tam.jpg?v=14" alt="Logo TAM · member of erajaya group" />
+        <img class="logo" src="logo-tam.jpg?v=15" alt="Logo TAM · member of erajaya group" />
         <div>
           <h1>DASHBOARD UJUNG WETAN</h1>
           <p id="subHead">PT TELETAMA ARTHA MANDIRI</p>
@@ -1230,6 +1261,7 @@
       <button class="nav-btn" data-page="kalkulator" type="button"><span class="ico">🧮</span>Kalkulator</button>
       <button class="nav-btn" data-page="review-dealer" type="button"><span class="ico">📋</span>Review Dealer</button>
       <button class="nav-btn" data-page="review-sales" type="button"><span class="ico">📈</span>Review Sales</button>
+      <button class="nav-btn" data-page="sku-trend" type="button"><span class="ico">📦</span>SKU Trend</button>
     </div>
   </nav>
 
@@ -1300,6 +1332,8 @@
   };
   /** Deep-link dari klik grafik Review Sales → Menu Sales */
   let salesDeepLink = null; // { metric, month, year, value, sales }
+  let skuTrendQuery = '';
+  let skuTrendLimit = 20;
   /** Filter & state Kalkulator (sheet KALKULATOR) — menu Kalkulator */
   let calcState = {
     material: '',      // hanya Material Description (tanpa CODE)
@@ -2618,7 +2652,15 @@
         <button class="nav-btn" data-page="kalkulator" type="button"><span class="ico">🧮</span>Kalkulator</button>
         <button class="nav-btn" data-page="review-dealer" type="button"><span class="ico">📋</span>Review Dealer</button>
         <button class="nav-btn" data-page="review-sales" type="button"><span class="ico">📈</span>Review Sales</button>
+        <button class="nav-btn" data-page="sku-trend" type="button"><span class="ico">📦</span>SKU Trend</button>
       `;
+    } else if (navInner && !navInner.querySelector('[data-page="sku-trend"]')) {
+      const extra = document.createElement('button');
+      extra.className = 'nav-btn';
+      extra.dataset.page = 'sku-trend';
+      extra.type = 'button';
+      extra.innerHTML = '<span class="ico">📦</span>SKU Trend';
+      navInner.appendChild(extra);
     }
     const m = DATA.meta;
     const depos = m.depos.filter(d => d !== 'Unknown');
@@ -2669,6 +2711,7 @@
       <div class="page" id="page-kalkulator"></div>
       <div class="page" id="page-review-dealer"></div>
       <div class="page" id="page-review-sales"></div>
+      <div class="page" id="page-sku-trend"></div>
       <p class="foot-note">PT TELETAMA ARTHA MANDIRI · ${esc(m.source||'')} · ${fmtN(m.focus_rows||0)} baris fokus</p>
     `;
 
@@ -2845,7 +2888,7 @@
   /** Filter + agregasi; di HP hindari scan dealer_grain 130k kecuali menu yang butuh */
   function getFilteredPack(force = false) {
     const mobile = isMobileDevice();
-    const needDealers = !mobile || ['depo', 'sales', 'review-dealer', 'review-sales', 'outlet'].includes(page);
+    const needDealers = !mobile || ['depo', 'sales', 'review-dealer', 'review-sales', 'outlet', 'sku-trend'].includes(page);
     const key = stateFilterKey() + '|' + (needDealers ? 'D' : 'L') + '|' + page;
     if (!force && filteredPack && filteredPackKey === key) return filteredPack;
     const rows = filteredGrain();
@@ -2859,6 +2902,269 @@
     filteredPack = { rows, dealers, brands, totalAmt, totalQty, ranked, light: !needDealers };
     filteredPackKey = key;
     return filteredPack;
+  }
+
+  function skuTrendTone(delta) {
+    return delta > 0 ? 'pos' : (delta < 0 ? 'neg' : 'flat');
+  }
+  function skuTrendArrow(delta) {
+    return delta > 0 ? '▲ Naik' : (delta < 0 ? '▼ Turun' : '● Stabil');
+  }
+  function skuTrendPct(cur, prev) {
+    const c = Number(cur) || 0;
+    const p = Number(prev) || 0;
+    if (!p && !c) return '0%';
+    if (!p) return 'baru';
+    const pct = ((c - p) / Math.abs(p)) * 100;
+    const sign = pct > 0 ? '+' : '';
+    return sign + pct.toFixed(1) + '%';
+  }
+
+  /** Qty per type SKU per minggu + keterangan naik/turun WoW */
+  function renderSkuTrend(dealers) {
+    const el = document.getElementById('page-sku-trend');
+    if (!el) return;
+
+    const weekMap = new Map(); // week -> { totalQty, bySku: Map(sku -> qty) }
+    const skuTotals = new Map();
+
+    for (const r of (dealers || [])) {
+      const items = r.sku_items;
+      if (!Array.isArray(items) || !items.length) continue;
+      const week = r.week || '';
+      if (!week) continue;
+      const brand = r.brand || 'SAMSUNG';
+      if (!weekMap.has(week)) weekMap.set(week, { totalQty: 0, bySku: new Map() });
+      const w = weekMap.get(week);
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const sku = normalizeSku(brand, it.sku || it.unit);
+        const qty = Number(it.qty) || 0;
+        if (!sku || !qty) continue;
+        w.totalQty += qty;
+        w.bySku.set(sku, (w.bySku.get(sku) || 0) + qty);
+        skuTotals.set(sku, (skuTotals.get(sku) || 0) + qty);
+      }
+    }
+
+    const weeks = [...weekMap.keys()].sort((a, b) => weekKey(a) - weekKey(b));
+    if (!weeks.length) {
+      el.innerHTML = `<section class="section">
+        <div class="section-head"><div><h3>SKU Trend</h3><p>Quantity per type SKU per minggu</p></div></div>
+        <p class="empty">Tidak ada data SKU pada filter aktif. Coba reset filter atau pilih periode lain.</p>
+      </section>`;
+      return;
+    }
+
+    const iLast = weeks.length - 1;
+    const iPrev = weeks.length - 2;
+    const wLast = weeks[iLast];
+    const wPrev = iPrev >= 0 ? weeks[iPrev] : '';
+    const lastMap = weekMap.get(wLast).bySku;
+    const prevMap = wPrev ? weekMap.get(wPrev).bySku : new Map();
+    const totalLast = weekMap.get(wLast).totalQty;
+    const totalPrev = wPrev ? weekMap.get(wPrev).totalQty : 0;
+    const totalDelta = totalLast - totalPrev;
+
+    const q = String(skuTrendQuery || '').trim().toLowerCase();
+    let rows = [...skuTotals.entries()].map(([sku, total]) => {
+      const last = lastMap.get(sku) || 0;
+      const prev = prevMap.get(sku) || 0;
+      const delta = last - prev;
+      let status = skuTrendTone(delta);
+      if (!prev && last) status = 'baru';
+      return { sku, total, last, prev, delta, status };
+    });
+    if (q) rows = rows.filter(r => r.sku.toLowerCase().includes(q));
+    rows.sort((a, b) => b.total - a.total || b.last - a.last);
+
+    const naik = rows.filter(r => r.delta > 0).sort((a, b) => b.delta - a.delta);
+    const turun = rows.filter(r => r.delta < 0).sort((a, b) => a.delta - b.delta);
+    const baru = rows.filter(r => r.status === 'baru');
+    const limit = skuTrendLimit === 'all' ? rows.length : (Number(skuTrendLimit) || 20);
+    const shown = rows.slice(0, limit);
+
+    const fmtDeltaQty = (d) => {
+      const n = Number(d) || 0;
+      if (!n) return '0';
+      return (n > 0 ? '+' : '−') + fmtN(Math.abs(n));
+    };
+
+    const weekSeries = weeks.map(w => weekMap.get(w).totalQty);
+    const chip = (r) => `<span class="wk-chip ${r.status === 'baru' ? 'pos' : skuTrendTone(r.delta)}">
+      <strong>${esc(r.sku)}</strong>
+      ${r.status === 'baru' ? 'baru' : skuTrendArrow(r.delta)} ${fmtDeltaQty(r.delta)}
+      <em>(${skuTrendPct(r.last, r.prev)})</em>
+    </span>`;
+
+    el.innerHTML = `
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h3>SKU Trend · Quantity per minggu</h3>
+            <p>Isi SKU dari data dealer · bandingkan <strong>${esc(wPrev || '–')}</strong> → <strong>${esc(wLast)}</strong> (filter slicer ikut berlaku)</p>
+          </div>
+        </div>
+        <div class="rd-kpi-grid">
+          <div class="rd-kpi"><div class="v">${fmtN(totalLast)}</div><div class="l">Qty ${esc(wLast)}</div><div class="s">${esc(wLast)}</div></div>
+          <div class="rd-kpi"><div class="v ${skuTrendTone(totalDelta)}">${skuTrendArrow(totalDelta)} ${fmtDeltaQty(totalDelta)}</div><div class="l">WoW Quantity</div><div class="s">${skuTrendPct(totalLast, totalPrev)}</div></div>
+          <div class="rd-kpi"><div class="v">${fmtN(skuTotals.size)}</div><div class="l">Type SKU</div><div class="s">unik di filter aktif</div></div>
+          <div class="rd-kpi"><div class="v pos">${fmtN(naik.length)}</div><div class="l">SKU naik</div><div class="s">vs minggu sebelumnya</div></div>
+          <div class="rd-kpi"><div class="v neg">${fmtN(turun.length)}</div><div class="l">SKU turun</div><div class="s">vs minggu sebelumnya</div></div>
+        </div>
+        ${weeks.length < 2 ? `<div class="wk-insight muted">Minimal 2 minggu di filter agar bisa bandingkan naik/turun. Sekarang hanya ${esc(wLast)}.</div>` : `
+        <div class="wk-insight">
+          <div class="wk-insight-head">
+            <span class="wk-badge">Analisis WoW</span>
+            <span class="wk-period">${esc(wPrev)} → ${esc(wLast)}</span>
+          </div>
+          <div class="wk-insight-total ${skuTrendTone(totalDelta)}">
+            <div class="l">Total quantity semua SKU</div>
+            <div class="v">${skuTrendArrow(totalDelta)} ${fmtDeltaQty(totalDelta)} <span class="pct">(${skuTrendPct(totalLast, totalPrev)})</span></div>
+            <div class="s">${esc(wPrev)}: ${fmtN(totalPrev)} → ${esc(wLast)}: ${fmtN(totalLast)}</div>
+          </div>
+          <div class="wk-insight-grid">
+            <div class="wk-col">
+              <div class="wk-col-h pos">▲ Naik (${fmtN(naik.length)} SKU)</div>
+              <div class="wk-chips">${naik.length ? naik.slice(0, 8).map(chip).join('') : '<span class="wk-empty">Tidak ada SKU naik</span>'}</div>
+            </div>
+            <div class="wk-col">
+              <div class="wk-col-h neg">▼ Turun (${fmtN(turun.length)} SKU)</div>
+              <div class="wk-chips">${turun.length ? turun.slice(0, 8).map(chip).join('') : '<span class="wk-empty">Tidak ada SKU turun</span>'}</div>
+            </div>
+          </div>
+          ${baru.length ? `<div class="wk-flat">● SKU baru di ${esc(wLast)}: ${baru.slice(0, 8).map(r => esc(r.sku)).join(', ')}${baru.length > 8 ? '…' : ''}</div>` : ''}
+          <ul class="wk-summary">
+            ${naik[0] ? `<li><strong class="pos">Naik terbesar:</strong> ${esc(naik[0].sku)} ${fmtDeltaQty(naik[0].delta)} (${skuTrendPct(naik[0].last, naik[0].prev)}) · ${fmtN(naik[0].prev)} → ${fmtN(naik[0].last)}</li>` : '<li>Tidak ada kenaikan quantity antar minggu terakhir.</li>'}
+            ${turun[0] ? `<li><strong class="neg">Turun terbesar:</strong> ${esc(turun[0].sku)} ${fmtDeltaQty(turun[0].delta)} (${skuTrendPct(turun[0].last, turun[0].prev)}) · ${fmtN(turun[0].prev)} → ${fmtN(turun[0].last)}</li>` : '<li>Tidak ada penurunan quantity antar minggu terakhir.</li>'}
+          </ul>
+          <p class="wk-note">Qty = jumlah unit per type SKU (Alias). Filter Tahun / Brand / Quartal / Bulan / Minggu / DEPO di slicer atas ikut dipakai.</p>
+        </div>`}
+      </section>
+      <section class="section">
+        <div class="section-head">
+          <div><h3>Trend quantity mingguan</h3><p>Total qty semua type SKU · filter aktif</p></div>
+        </div>
+        <div class="chart-box"><canvas id="cSkuWeek"></canvas></div>
+      </section>
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h3>Daftar SKU</h3>
+            <p>${fmtN(rows.length)} type · tampilkan ${skuTrendLimit === 'all' ? 'semua' : 'top ' + fmtN(limit)} · urut total qty</p>
+          </div>
+        </div>
+        <div class="sku-tools">
+          <div class="field">
+            <label>Cari type SKU</label>
+            <input type="search" id="skuTrendSearch" placeholder="Contoh: Galaxy A16 / 8/256" value="${esc(skuTrendQuery)}" />
+          </div>
+          <div class="field" style="flex:0 0 160px;min-width:140px">
+            <label>Tampilkan</label>
+            <select id="skuTrendLimit" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-size:.82rem;font-weight:700;background:#fff">
+              <option value="10" ${skuTrendLimit==10?'selected':''}>Top 10</option>
+              <option value="20" ${skuTrendLimit==20?'selected':''}>Top 20</option>
+              <option value="50" ${skuTrendLimit==50?'selected':''}>Top 50</option>
+              <option value="all" ${skuTrendLimit==='all'?'selected':''}>Semua</option>
+            </select>
+          </div>
+        </div>
+        <div class="sku-tbl-wrap">
+          <table class="sku-tbl">
+            <thead>
+              <tr>
+                <th>Type SKU</th>
+                <th class="n">Total qty</th>
+                <th class="n">${esc(wPrev || 'Minggu sblm')}</th>
+                <th class="n">${esc(wLast)}</th>
+                <th class="n">Δ Qty</th>
+                <th class="n">%</th>
+                <th>Keterangan</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${shown.length ? shown.map(r => {
+                const label = r.status === 'baru' ? '▲ Baru' : skuTrendArrow(r.delta);
+                const cls = r.status === 'baru' ? 'baru' : skuTrendTone(r.delta);
+                return `<tr>
+                  <td class="sku-name">${esc(r.sku)}</td>
+                  <td class="n">${fmtN(r.total)}</td>
+                  <td class="n">${fmtN(r.prev)}</td>
+                  <td class="n">${fmtN(r.last)}</td>
+                  <td class="n delta ${cls}">${fmtDeltaQty(r.delta)}</td>
+                  <td class="n delta ${cls}">${skuTrendPct(r.last, r.prev)}</td>
+                  <td><span class="sku-status ${cls}">${label}</span></td>
+                </tr>`;
+              }).join('') : `<tr><td colspan="7" class="empty">Tidak ada SKU yang cocok dengan pencarian.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    `;
+
+    const search = document.getElementById('skuTrendSearch');
+    const lim = document.getElementById('skuTrendLimit');
+    if (search) {
+      search.onkeydown = (e) => {
+        if (e.key === 'Enter') {
+          skuTrendQuery = search.value || '';
+          apply();
+        }
+      };
+      search.onchange = () => {
+        skuTrendQuery = search.value || '';
+        apply();
+      };
+    }
+    if (lim) {
+      lim.onchange = () => {
+        skuTrendLimit = lim.value === 'all' ? 'all' : (Number(lim.value) || 20);
+        apply();
+      };
+    }
+
+    destroyChart('skuWeek');
+    const canvas = document.getElementById('cSkuWeek');
+    if (canvas && typeof Chart !== 'undefined') {
+      charts.skuWeek = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: weeks,
+          datasets: [{
+            label: 'Qty',
+            data: weekSeries,
+            borderColor: '#1d4ed8',
+            backgroundColor: 'rgba(29,78,216,.12)',
+            fill: true,
+            tension: 0.35,
+            borderWidth: 3,
+            pointRadius: 4,
+            pointBackgroundColor: '#1d4ed8',
+            datalabels: {
+              align: 'top',
+              anchor: 'end',
+              color: '#0B2F6B',
+              font: { weight: '900', size: 10 },
+              formatter: (v) => v ? fmtN(v) : ''
+            }
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          layout: { padding: { top: 18 } },
+          plugins: {
+            legend: { display: false },
+            datalabels: { display: weeks.length <= 16 },
+            tooltip: { callbacks: { label: (ctx) => ' Qty: ' + fmtN(ctx.raw || 0) } }
+          },
+          scales: {
+            x: { ticks: { color: '#334155', font: { weight: '700' } }, grid: { display: false } },
+            y: { ticks: { color: '#5b6b82', callback: (v) => fmtN(v) }, grid: { color: 'rgba(148,163,184,.2)' }, title: { display: true, text: 'Quantity', color: '#5b6b82' } }
+          }
+        }
+      });
+    }
   }
 
   /** Render HANYA halaman aktif — pindah menu tidak menghitung ulang halaman lain */
@@ -2885,6 +3191,9 @@
         break;
       case 'review-sales':
         renderReviewSales();
+        break;
+      case 'sku-trend':
+        renderSkuTrend(dealers);
         break;
       default:
         renderOverview(rows, brands, totalAmt, totalQty, ranked);
